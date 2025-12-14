@@ -1,0 +1,119 @@
+
+services:
+  postgres_db:
+    image: postgres:15
+    container_name: mini_erp_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - erp_network
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  mongo_db:
+    image: mongo:latest
+    container_name: mini_erp_mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - erp_network
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+
+  redis_cache:
+    image: redis:alpine
+    container_name: mini_erp_redis
+    networks:
+      - erp_network
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  rabbitmq_broker:
+    image: rabbitmq:management
+    container_name: mini_erp_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    networks:
+      - erp_network
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: unless-stopped
+
+  backend_api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mini_erp_backend
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo_db:27017
+      REDIS_URL: redis://redis_cache:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq_broker:5672/
+    networks:
+      - erp_network
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres_db
+      - mongo_db
+      - redis_cache
+      - rabbitmq_broker
+    restart: unless-stopped
+
+  frontend_web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mini_erp_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - erp_network
+    ports:
+      - "3333:3000"
+    depends_on:
+      - backend_api
+    command: npm run dev
+    restart: unless-stopped
+
+  realtime_server:
+    build:
+      context: ./realtime
+      dockerfile: Dockerfile
+    container_name: mini_erp_realtime
+    volumes:
+      - ./realtime:/app
+    environment:
+      REDIS_URL: redis://redis_cache:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq_broker:5672/
+    networks:
+      - erp_network
+    ports:
+      - "3001:3001"
+    depends_on:
+      - redis_cache
+      - rabbitmq_broker
+    restart: unless-stopped
+
+networks:
+  erp_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongo_data:

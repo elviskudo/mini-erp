@@ -1,0 +1,50 @@
+# General
+.DS_Store
+.env
+*.log
+
+# Node
+node_modules/
+.nuxt/
+.output/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# Project specific
+backend/venv/
+frontend/node_modules/
+realtime/node_modules/

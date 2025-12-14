@@ -5,21 +5,25 @@ import uuid
 from database import Base
 from datetime import datetime
 
+
 class SOStatus:
     DRAFT = "Draft"
     CONFIRMED = "Confirmed"
     SHIPPED = "Shipped"
     CANCELLED = "Cancelled"
 
+
 class OrderSource:
     MANUAL = "Manual"
     WEB = "Web"
     API = "API"
 
+
 class SalesOrder(Base):
     __tablename__ = "sales_orders"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     customer_id = Column(UUID(as_uuid=True), ForeignKey("sales_customers.id"))
     date = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default=SOStatus.DRAFT)
@@ -30,10 +34,12 @@ class SalesOrder(Base):
     customer = relationship("Customer")
     items = relationship("SOItem", back_populates="order", cascade="all, delete-orphan")
 
+
 class SOItem(Base):
     __tablename__ = "so_items"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     sales_order_id = Column(UUID(as_uuid=True), ForeignKey("sales_orders.id"))
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"))
     quantity = Column(Float, nullable=False)

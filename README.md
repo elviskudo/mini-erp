@@ -1,6 +1,6 @@
 # Mini ERP System
 
-A modern, full-stack ERP system built with efficiency and scalability in mind. Designed for small to medium manufacturing businesses with multi-tenancy support.
+A modern, full-stack ERP system built with efficiency and scalability in mind. Designed for small to medium manufacturing businesses with **complete multi-tenancy support**.
 
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
 ![Nuxt](https://img.shields.io/badge/Nuxt.js-00DC82?style=flat&logo=nuxt.js&logoColor=white)
@@ -10,7 +10,7 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 ## ✨ Features
 
 ### Core Modules
-- **Manufacturing** - Work centers, products, production orders
+- **Manufacturing** - Work centers, products, BOMs, production orders
 - **Inventory** - Stock management, warehouses, stock opname
 - **Procurement** - Purchase requests, purchase orders, vendors
 - **Receiving** - Goods receiving, quality checks
@@ -21,11 +21,19 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 - **Projects** - Project management, task tracking
 - **Maintenance** - Asset maintenance scheduling
 
-### Authentication & Security
+### 🏢 Multi-Tenancy (SaaS Architecture)
+- **Tenant Isolation** - All data scoped by `tenant_id`
+- **Company Registration** - 2-step wizard (Company → Admin)
+- **Employee Join Flow** - 6-character company code system
+- **Iron Wall Middleware** - Automatic tenant filtering on all queries
+- **Real-time Isolation** - Socket.IO rooms per tenant
+- **Audit Logging** - All logs tagged with `tenant_id`
+
+### 🔐 Authentication & Security
 - JWT-based authentication
 - Email OTP verification
-- Multi-tenancy support
-- Role-based access control (Admin, Operator, Manager, Lab Tech)
+- Role-based access control (Owner, Admin, Member, Pending)
+- Automatic `X-Tenant-ID` header injection
 
 ## 🛠 Tech Stack
 
@@ -43,7 +51,7 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 | Component | Technology |
 |-----------|------------|
 | Framework | Nuxt 3 (Vue.js 3) |
-| Styling | TailwindCSS + Nuxt UI |
+| Styling | TailwindCSS + Nuxt UI (Gumroad-inspired pink theme) |
 | State | Pinia |
 | HTTP Client | Axios |
 
@@ -84,27 +92,72 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 | Backend API Docs | http://localhost:8000/docs | - |
 | RabbitMQ Console | http://localhost:15672 | guest/guest |
 
+## 🏢 Multi-Tenancy Flow
+
+### For Company Owners (New Organizations)
+
+1. Visit `/auth/register-company`
+2. **Step 1**: Enter company details (name, domain, currency, timezone)
+3. Receive unique 6-character **Company Code** (e.g., `ABC123`)
+4. **Step 2**: Create admin account
+5. Verify email via OTP
+6. Login and start using the system
+
+### For Employees (Joining Existing Company)
+
+1. Visit `/auth/join-company`
+2. Enter company code from your admin
+3. Create your account
+4. Verify email via OTP
+5. Wait for admin approval (status: `PENDING`)
+6. Login after approval
+
+### SaaS API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/saas/register-tenant` | POST | Register new company |
+| `/saas/register-owner` | POST | Register owner/admin |
+| `/saas/find-company/{code}` | GET | Find company by code |
+| `/saas/request-join` | POST | Employee join request |
+| `/saas/pending-members` | GET | List pending requests |
+| `/saas/approve-member` | POST | Approve/reject member |
+
+### Iron Wall Middleware
+
+All API requests automatically include tenant context:
+
+```
+Frontend → X-Tenant-ID Header → Backend → Tenant Dependency → Filtered Queries
+```
+
+**Usage in Routers:**
+```python
+from dependencies.tenant import require_tenant
+
+@router.get("/products")
+async def get_products(
+    tenant: Tenant = Depends(require_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    # Queries automatically scoped to tenant
+    result = await db.execute(
+        select(Product).where(Product.tenant_id == tenant.id)
+    )
+```
+
 ## 🔐 Authentication Flow
 
-### Registration
-1. User fills registration form with tenant selection
-2. System generates 6-digit OTP (expires in 10 minutes)
-3. OTP sent via email (or printed to console in dev mode)
-4. User enters OTP on verification page
-5. Account activated upon successful verification
-
-### Login
-1. User enters username/email and password
-2. System validates credentials
-3. Checks if email is verified
-4. Returns JWT access token
-
-### API Endpoints
+### Registration (Legacy - Single User)
 ```
 POST /auth/register    - Register new user
-POST /auth/token       - Login (OAuth2 form)
 POST /auth/send-otp    - Resend OTP code
 POST /auth/verify-otp  - Verify OTP and activate
+```
+
+### Login
+```
+POST /auth/token       - Login (OAuth2 form)
 GET  /auth/me          - Get current user info
 ```
 
@@ -120,44 +173,56 @@ SMTP_USER=your-email@gmail.com
 SMTP_PASSWORD=your-app-password
 SMTP_FROM_EMAIL=noreply@minierp.com
 SMTP_FROM_NAME=Mini ERP
-
-# Alternative providers:
-# Mailgun: smtp.mailgun.org:587
-# SendGrid: smtp.sendgrid.net:587
-# Mailtrap: sandbox.smtp.mailtrap.io:2525
 ```
 
 > **Dev Mode**: If `SMTP_USER` is empty, OTP codes are printed to backend console.
-
-## 🏢 Multi-Tenancy
-
-Each user belongs to a tenant (organization). Tenants are created during registration:
-
-```
-POST /tenants/         - Create new tenant
-GET  /tenants/         - List all tenants
-GET  /tenants/{id}     - Get tenant details
-```
 
 ## 📁 Project Structure
 
 ```
 mini-erp/
 ├── backend/
-│   ├── routers/        # API endpoints
-│   ├── models/         # SQLAlchemy models
-│   ├── schemas/        # Pydantic schemas
-│   ├── services/       # Business logic
-│   ├── connections/    # DB/Queue connections
-│   └── main.py         # App entry point
+│   ├── routers/           # API endpoints
+│   │   ├── auth.py        # Authentication
+│   │   ├── saas.py        # Multi-tenant onboarding
+│   │   └── ...
+│   ├── models/            # SQLAlchemy models
+│   │   ├── base.py        # TenantMixin base class
+│   │   ├── models_saas.py # Tenant, TenantMember
+│   │   └── ...
+│   ├── dependencies/      # FastAPI dependencies
+│   │   └── tenant.py      # Iron Wall middleware
+│   ├── services/          # Business logic
+│   ├── connections/       # DB/Queue connections
+│   └── main.py            # App entry point
 ├── frontend/
-│   ├── pages/          # Nuxt pages
-│   ├── layouts/        # App layouts
-│   ├── stores/         # Pinia stores
-│   ├── middleware/     # Route guards
-│   └── plugins/        # Axios, etc.
-├── realtime/           # Socket.io server
+│   ├── pages/
+│   │   └── auth/
+│   │       ├── login.vue           # Gumroad-style login
+│   │       ├── register-company.vue # 2-step company registration
+│   │       ├── join-company.vue    # Employee join flow
+│   │       └── verify.vue          # OTP verification
+│   ├── stores/auth.ts     # Auth + tenant state
+│   ├── plugins/api.ts     # Axios with X-Tenant-ID
+│   └── tailwind.config.js # Pink theme
+├── realtime/              # Socket.IO with tenant rooms
 └── docker-compose.yml
+```
+
+## 🎨 Design System (Gumroad-Inspired)
+
+### Color Palette
+| Name | Hex | Usage |
+|------|-----|-------|
+| Primary | `#ec4899` | Buttons, links, accents |
+| Accent | `#a855f7` | Secondary highlights |
+| Background | `pink-50 → purple-100` | Gradient backgrounds |
+
+### Custom Utilities
+```css
+.shadow-gumroad     /* Soft pink shadow */
+.shadow-gumroad-lg  /* Large pink shadow */
+.bg-gradient-gumroad /* Pink-to-purple gradient */
 ```
 
 ## 🧪 Default Users (after seeding)
@@ -193,8 +258,8 @@ Response:
 ### Backend Hot Reload
 Backend auto-reloads on file changes via uvicorn.
 
-### Frontend HMR
-Frontend has Hot Module Replacement disabled in Docker. Restart container after changes:
+### Frontend Changes
+Restart container after changes:
 ```bash
 docker compose restart frontend_web
 ```
@@ -205,10 +270,18 @@ docker compose exec backend_api alembic upgrade head
 docker compose exec backend_api alembic revision --autogenerate -m "description"
 ```
 
+## 🔮 Roadmap
+
+- [ ] Phase 1: Enhanced Manufacturing (MRP, Work Orders)
+- [ ] Phase 2: Advanced Inventory (Batch/Serial Tracking)
+- [ ] Phase 3: Financial Reporting
+- [ ] Phase 4: Mobile App
+- [ ] Phase 5: AI-Powered Analytics
+
 ## 📝 License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-Built with ❤️ using FastAPI, Nuxt 3, and Docker
+Built with ❤️ using FastAPI, Nuxt 3, and Docker | Gumroad-inspired design 🎀

@@ -23,10 +23,46 @@ const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://user:password@localhost
 
     io.on("connection", (socket) => {
         console.log("Client connected:", socket.id);
+
+        // Get tenant_id from auth handshake
+        const tenantId = socket.handshake.auth?.tenantId || socket.handshake.query?.tenant_id;
+        const userId = socket.handshake.auth?.userId || socket.handshake.query?.user_id;
+
+        // Join tenant-specific room
+        if (tenantId) {
+            const tenantRoom = `room_tenant_${tenantId}`;
+            socket.join(tenantRoom);
+            console.log(`Socket ${socket.id} joined tenant room: ${tenantRoom}`);
+        }
+
+        // Join user-specific room for direct messages
+        if (userId) {
+            const userRoom = `room_user_${userId}`;
+            socket.join(userRoom);
+            console.log(`Socket ${socket.id} joined user room: ${userRoom}`);
+        }
+
+        // Also join global room for system-wide announcements
         socket.join("global_notifications");
 
         socket.on("disconnect", () => {
             console.log("Client disconnected:", socket.id);
+        });
+
+        // Handle switching tenant rooms (for users with multiple tenants)
+        socket.on("switch_tenant", (newTenantId) => {
+            // Leave old tenant room
+            for (const room of socket.rooms) {
+                if (room.startsWith("room_tenant_")) {
+                    socket.leave(room);
+                }
+            }
+            // Join new tenant room
+            if (newTenantId) {
+                const tenantRoom = `room_tenant_${newTenantId}`;
+                socket.join(tenantRoom);
+                console.log(`Socket ${socket.id} switched to tenant room: ${tenantRoom}`);
+            }
         });
     });
 
@@ -46,9 +82,23 @@ const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://user:password@localhost
 
                 try {
                     const payload = JSON.parse(content);
-                    // Broadcast to all connected clients (for MVP)
-                    // In real app, filter by payload.user_id
-                    io.to("global_notifications").emit("notification", payload);
+
+                    // Determine target room based on payload
+                    if (payload.tenant_id) {
+                        // Send to specific tenant room only
+                        const tenantRoom = `room_tenant_${payload.tenant_id}`;
+                        io.to(tenantRoom).emit("notification", payload);
+                        console.log(`Notification sent to ${tenantRoom}`);
+                    } else if (payload.user_id) {
+                        // Send to specific user only
+                        const userRoom = `room_user_${payload.user_id}`;
+                        io.to(userRoom).emit("notification", payload);
+                        console.log(`Notification sent to ${userRoom}`);
+                    } else {
+                        // Broadcast to all (system announcement)
+                        io.to("global_notifications").emit("notification", payload);
+                        console.log("Notification broadcast globally");
+                    }
                 } catch (e) {
                     console.error("Error parsing msg:", e);
                 }
@@ -62,7 +112,13 @@ const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://user:password@localhost
 
     // Health check
     setInterval(() => {
-        console.log("Realtime server alive. Clients:", io.engine.clientsCount);
+        const roomCounts = {};
+        for (const [room, sockets] of io.sockets.adapter.rooms) {
+            if (room.startsWith("room_tenant_")) {
+                roomCounts[room] = sockets.size;
+            }
+        }
+        console.log("Realtime server alive. Clients:", io.engine.clientsCount, "Tenant rooms:", roomCounts);
     }, 60000);
 
 })();

@@ -5,21 +5,22 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
+
 class GoodsReceipt(Base):
     __tablename__ = "goods_receipts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     po_id = Column(UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=False)
     receive_date = Column(DateTime, default=datetime.utcnow)
     warehouse_id = Column(UUID(as_uuid=True), ForeignKey("warehouses.id"), nullable=False)
-    
-    # Ideally we would have lines here linking to PO Lines and Batches, 
-    # but for simplicity we rely on the created batches to track what came in.
+
 
 class InventoryBatch(Base):
     __tablename__ = "inventory_batches"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
     batch_number = Column(String, nullable=False, index=True)
     quantity_on_hand = Column(Float, default=0.0)

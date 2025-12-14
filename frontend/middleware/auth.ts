@@ -8,8 +8,19 @@ export default defineNuxtRouteMiddleware((to, from) => {
         authStore.initialize()
     }
 
-    // Redirect to login if still not authenticated
-    if (!authStore.isAuthenticated && to.path !== '/auth/login' && to.path !== '/auth/register') {
+    // Public paths that don't require authentication
+    const publicPaths = [
+        '/auth/login',
+        '/auth/register',
+        '/auth/register-company',
+        '/auth/join-company',
+        '/auth/verify'
+    ]
+
+    const isPublicPath = publicPaths.some(path => to.path.startsWith(path))
+
+    // Redirect to login if not authenticated and not on public path
+    if (!authStore.isAuthenticated && !isPublicPath) {
         return navigateTo('/auth/login')
     }
 })

@@ -18,9 +18,17 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     api.interceptors.request.use((config) => {
         const authStore = useAuthStore()
+
+        // Add auth token
         if (authStore.token) {
             config.headers.Authorization = `Bearer ${authStore.token}`
         }
+
+        // Add tenant ID for multi-tenancy (Iron Wall)
+        if (authStore.tenantId) {
+            config.headers['X-Tenant-ID'] = authStore.tenantId
+        }
+
         return config
     })
 

@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 import enum
 
+
 class InvoiceStatus(str, enum.Enum):
     DRAFT = "Draft"
     MATCHED = "Matched"
@@ -13,11 +14,13 @@ class InvoiceStatus(str, enum.Enum):
     POSTED = "Posted"
     PAID = "Paid"
 
+
 class PurchaseInvoice(Base):
     __tablename__ = "ap_invoices"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    invoice_number = Column(String, unique=True, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    invoice_number = Column(String, index=True)
     vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"))
     po_id = Column(UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=True)
     date = Column(DateTime, default=datetime.utcnow)
@@ -29,10 +32,12 @@ class PurchaseInvoice(Base):
     purchase_order = relationship("PurchaseOrder")
     items = relationship("PurchaseInvoiceItem", backref="invoice", cascade="all, delete-orphan")
 
+
 class PurchaseInvoiceItem(Base):
     __tablename__ = "ap_invoice_items"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     invoice_id = Column(UUID(as_uuid=True), ForeignKey("ap_invoices.id"))
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"))
     quantity = Column(Float)

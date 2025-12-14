@@ -6,11 +6,13 @@ from sqlalchemy.sql import func
 import enum
 from database import Base
 
+
 class UserRole(str, enum.Enum):
     ADMIN = "Admin"
     OPERATOR = "Operator"
     LAB_TECH = "Lab_Tech"
     MANAGER = "Manager"
+
 
 class User(Base):
     __tablename__ = "users"
@@ -26,8 +28,14 @@ class User(Base):
     otp_code = Column(String, nullable=True)
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)
     
+    # Default tenant (for backward compatibility)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True)
     tenant = relationship("Tenant", back_populates="users")
+    
+    # Multi-tenant memberships
+    memberships = relationship("TenantMember", back_populates="user", 
+                               foreign_keys="TenantMember.user_id",
+                               cascade="all, delete-orphan")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

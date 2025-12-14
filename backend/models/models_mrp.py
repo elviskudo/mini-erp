@@ -6,24 +6,29 @@ import enum
 from datetime import datetime
 from database import Base
 
+
 class MRPActionType(str, enum.Enum):
-    MAKE = "Make" # Produce internally
-    BUY = "Buy"   # Purchase from vendor
+    MAKE = "Make"  # Produce internally
+    BUY = "Buy"    # Purchase from vendor
+
 
 class MRPRun(Base):
     __tablename__ = "mrp_runs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     run_date = Column(DateTime, default=datetime.utcnow)
-    status = Column(String, default="Pending") # Pending, Completed, Failed
+    status = Column(String, default="Pending")  # Pending, Completed, Failed
     notes = Column(String, nullable=True)
 
     requirements = relationship("MaterialRequirement", back_populates="mrp_run", cascade="all, delete-orphan")
+
 
 class MaterialRequirement(Base):
     __tablename__ = "material_requirements"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     mrp_run_id = Column(UUID(as_uuid=True), ForeignKey("mrp_runs.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
     required_qty = Column(Float, nullable=False)

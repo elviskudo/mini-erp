@@ -1,4 +1,5 @@
 from database import Base
+from .base import TenantMixin, set_current_tenant, get_current_tenant, clear_current_tenant
 from .user import User, UserRole
 from .models_manufacturing import *
 from .models_mrp import *
@@ -17,4 +18,4 @@ from .models_crm import *
 from .models_projects import *
 from .models_maintenance import *
 from .models_qms import *
-from .models_saas import *
+from .models_saas import Tenant, TenantMember, MemberRole, SubscriptionTier

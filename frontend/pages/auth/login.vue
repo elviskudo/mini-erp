@@ -1,40 +1,69 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-100">
-    <UCard class="w-full max-w-sm">
-      <template #header>
-        <div class="text-center">
-            <h1 class="text-2xl font-bold text-gray-900">Mini ERP</h1>
-            <p class="text-gray-500 mt-1">Sign in to your account</p>
-        </div>
-      </template>
+  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-50 to-purple-100">
+    <!-- Decorative background elements -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div class="absolute -top-40 -right-40 w-80 h-80 bg-pink-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
+      <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
+    </div>
 
-      <form @submit.prevent="handleLogin" class="space-y-4">
-        <UFormGroup label="Username" name="username" :error="errors.username">
+    <div class="w-full max-w-md relative z-10">
+      <!-- Logo/Brand -->
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-500 rounded-2xl shadow-gumroad-lg mb-4">
+          <span class="text-2xl font-bold text-white">ME</span>
+        </div>
+        <h1 class="text-3xl font-bold text-gray-900">Mini ERP</h1>
+        <p class="text-gray-500 mt-1">Welcome back! Sign in to continue.</p>
+      </div>
+
+      <UCard class="shadow-xl border-0 backdrop-blur-sm bg-white/90">
+        <form @submit.prevent="handleLogin" class="space-y-5">
+          <UFormGroup label="Username" name="username" :error="errors.username">
             <UInput 
               v-model="username" 
               icon="i-heroicons-user" 
               placeholder="Enter username"
+              size="lg"
               :color="errors.username ? 'red' : undefined"
             />
-        </UFormGroup>
-        
-        <UFormGroup label="Password" name="password" :error="errors.password">
+          </UFormGroup>
+          
+          <UFormGroup label="Password" name="password" :error="errors.password">
             <UInput 
               v-model="password" 
               type="password" 
               icon="i-heroicons-lock-closed" 
               placeholder="Enter password"
+              size="lg"
               :color="errors.password ? 'red' : undefined"
             />
-        </UFormGroup>
+          </UFormGroup>
 
-        <UAlert v-if="error" color="red" variant="soft" :title="error" icon="i-heroicons-exclamation-triangle" />
+          <UAlert v-if="error" color="red" variant="soft" :title="error" icon="i-heroicons-exclamation-triangle" />
 
-        <UButton type="submit" block :loading="loading">
-            Sign In
-        </UButton>
-      </form>
-    </UCard>
+          <UButton type="submit" block size="lg" :loading="loading" color="pink" class="font-semibold shadow-gumroad hover:shadow-gumroad-lg transition-shadow">
+            Sign In →
+          </UButton>
+        </form>
+
+        <template #footer>
+          <div class="text-center space-y-3 pt-2">
+            <p class="text-sm text-gray-500">
+              New to Mini ERP? 
+              <NuxtLink to="/auth/register-company" class="text-pink-600 hover:text-pink-700 font-medium">
+                Create a company
+              </NuxtLink>
+            </p>
+            <p class="text-sm text-gray-500">
+              Want to join an existing company? 
+              <NuxtLink to="/auth/join-company" class="text-pink-600 hover:text-pink-700 font-medium">
+                Enter code
+              </NuxtLink>
+            </p>
+          </div>
+        </template>
+      </UCard>
+    </div>
   </div>
 </template>
 

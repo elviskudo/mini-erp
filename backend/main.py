@@ -5,7 +5,7 @@ from routers import (
     auth, manufacturing, iot, mrp, qc, inventory, 
     procurement, receiving, issuance, opname, delivery,
     finance, hr, crm, projects, maintenance, ecommerce, compliance,
-    ap, ar, subscription, upload, tenants
+    ap, ar, subscription, upload, tenants, saas
 )
 from middleware import AuditMiddleware
 from connections.mongodb import connect_to_mongo, close_mongo_connection
@@ -59,6 +59,7 @@ app.include_router(compliance.router, prefix="/api/v1")
 app.include_router(subscription.router, prefix="/api/v1")
 app.include_router(upload.router, prefix="/api/v1")
 app.include_router(tenants.router)
+app.include_router(saas.router)
 
 @app.get("/")
 def read_root():

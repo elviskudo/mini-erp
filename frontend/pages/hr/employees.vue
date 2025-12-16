@@ -1,77 +1,92 @@
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold text-gray-900">Employees</h2>
-      <UButton icon="i-heroicons-plus" color="black" @click="isOpen = true">New Employee</UButton>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-semibold text-gray-900">Employees</h2>
+        <p class="text-gray-500">Manage employee records</p>
+      </div>
+      <UButton icon="i-heroicons-plus" @click="openCreate">New Employee</UButton>
     </div>
 
-    <UCard>
+    <UCard :ui="{ body: { padding: '' } }">
        <UTable :columns="columns" :rows="employees" :loading="loading">
             <template #status-data="{ row }">
-                <UBadge :color="row.status === 'Active' ? 'green' : 'red'" variant="soft">{{ row.status }}</UBadge>
+                <UBadge :color="row.status === 'Active' ? 'green' : 'red'" variant="subtle">{{ row.status }}</UBadge>
+            </template>
+            <template #actions-data="{ row }">
+              <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="openEdit(row)" />
             </template>
        </UTable>
     </UCard>
 
-    <UModal v-model="isOpen">
-      <div class="p-4">
-        <h3 class="text-lg font-bold mb-4">Add Employee</h3>
-        <UForm :state="form" class="space-y-4" @submit="onSubmit">
-            <UFormGroup label="First Name" name="first_name" required>
-                <UInput v-model="form.first_name" />
-            </UFormGroup>
-            <UFormGroup label="Last Name" name="last_name" required>
-                <UInput v-model="form.last_name" />
-            </UFormGroup>
-            <UFormGroup label="Email" name="email" required>
-                <UInput v-model="form.email" type="email" />
-            </UFormGroup>
-             <UFormGroup label="Phone" name="phone">
-                <UInput v-model="form.phone" />
-            </UFormGroup>
-            <div class="grid grid-cols-2 gap-4">
-                <UFormGroup label="Department" name="department">
-                     <UInput v-model="form.department" />
-                </UFormGroup>
-                 <UFormGroup label="Job Title" name="job_title">
-                     <UInput v-model="form.job_title" />
-                </UFormGroup>
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-                 <UFormGroup label="Base Salary" name="base_salary">
-                     <UInput v-model="form.base_salary" type="number" />
-                </UFormGroup>
-                <UFormGroup label="Hire Date" name="hire_date">
-                     <UInput v-model="form.hire_date" type="date" />
-                </UFormGroup>
-            </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" color="black" :loading="saving">Save</UButton>
-            </div>
-        </UForm>
+    <!-- Employee Form Slideover -->
+    <FormSlideover 
+      v-model="isOpen" 
+      :title="editMode ? 'Edit Employee' : 'Add Employee'"
+      :loading="saving"
+      @submit="onSubmit"
+    >
+      <div class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="First Name" required>
+            <UInput v-model="form.first_name" />
+          </UFormGroup>
+          <UFormGroup label="Last Name" required>
+            <UInput v-model="form.last_name" />
+          </UFormGroup>
+        </div>
+        
+        <UFormGroup label="Email" required>
+          <UInput v-model="form.email" type="email" />
+        </UFormGroup>
+        
+        <UFormGroup label="Phone">
+          <UInput v-model="form.phone" />
+        </UFormGroup>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Department">
+            <UInput v-model="form.department" />
+          </UFormGroup>
+          <UFormGroup label="Job Title">
+            <UInput v-model="form.job_title" />
+          </UFormGroup>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Base Salary">
+            <UInput v-model="form.base_salary" type="number" />
+          </UFormGroup>
+          <UFormGroup label="Hire Date">
+            <UInput v-model="form.hire_date" type="date" />
+          </UFormGroup>
+        </div>
       </div>
-    </UModal>
+    </FormSlideover>
   </div>
 </template>
 
 <script setup lang="ts">
-const { $api } = useNuxtApp()
+definePageMeta({
+  middleware: 'auth'
+})
+
 const toast = useToast()
 const loading = ref(false)
 const saving = ref(false)
 const isOpen = ref(false)
-const employees = ref([])
+const editMode = ref(false)
+const employees = ref<any[]>([])
 
 const form = reactive({
+    id: '',
     first_name: '',
     last_name: '',
     email: '',
     phone: '',
     department: '',
     job_title: '',
-    base_salary: 5000,
+    base_salary: 5000000,
     hire_date: new Date().toISOString().split('T')[0]
 })
 
@@ -81,14 +96,15 @@ const columns = [
   { key: 'job_title', label: 'Title' },
   { key: 'department', label: 'Dept' },
   { key: 'base_salary', label: 'Salary' },
-  { key: 'status', label: 'Status' }
+  { key: 'status', label: 'Status' },
+  { key: 'actions', label: '' }
 ]
 
 const fetchEmployees = async () => {
     loading.value = true
     try {
-        const res = await $api.get('/hr/employees')
-        employees.value = res.data
+        const res: any = await $fetch('/api/hr/employees')
+        employees.value = res
     } catch (e) {
         console.error(e)
     } finally {
@@ -96,21 +112,53 @@ const fetchEmployees = async () => {
     }
 }
 
+const resetForm = () => {
+    Object.assign(form, {
+        id: '',
+        first_name: '', 
+        last_name: '', 
+        email: '', 
+        phone: '',
+        department: '', 
+        job_title: '', 
+        base_salary: 5000000,
+        hire_date: new Date().toISOString().split('T')[0]
+    })
+}
+
+const openCreate = () => {
+    resetForm()
+    editMode.value = false
+    isOpen.value = true
+}
+
+const openEdit = (row: any) => {
+    Object.assign(form, row)
+    editMode.value = true
+    isOpen.value = true
+}
+
 const onSubmit = async () => {
     saving.value = true
     try {
-        await $api.post('/hr/employees', form)
-        toast.add({ title: 'Success', description: 'Employee created.' })
+        if (editMode.value) {
+            await $fetch(`/api/hr/employees/${form.id}`, {
+                method: 'PUT',
+                body: form
+            })
+            toast.add({ title: 'Success', description: 'Employee updated.' })
+        } else {
+            await $fetch('/api/hr/employees', {
+                method: 'POST',
+                body: form
+            })
+            toast.add({ title: 'Success', description: 'Employee created.' })
+        }
         isOpen.value = false
         fetchEmployees()
-        // Reset form
-        Object.assign(form, {
-            first_name: '', last_name: '', email: '', phone: '',
-            department: '', job_title: '', base_salary: 5000,
-            hire_date: new Date().toISOString().split('T')[0]
-        })
+        resetForm()
     } catch (e) {
-        toast.add({ title: 'Error', description: 'Failed to create employee.', color: 'red' })
+        toast.add({ title: 'Error', description: 'Failed to save employee.', color: 'red' })
     } finally {
         saving.value = false
     }

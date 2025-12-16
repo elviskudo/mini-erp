@@ -8,7 +8,12 @@ export default defineNuxtConfig({
     },
     vite: {
         server: {
-            hmr: false,
+            hmr: {
+                protocol: 'ws',
+                host: 'localhost',
+                port: 24678,
+                clientPort: 24678
+            },
             watch: {
                 usePolling: true
             }
@@ -33,7 +38,7 @@ export default defineNuxtConfig({
     },
     nitro: {
         routeRules: {
-            '/api/**': { proxy: 'http://backend:8000/**' }
+            '/api/**': { proxy: 'http://backend_api:8000/**' }
         }
     },
     compatibilityDate: '2025-01-01'

@@ -141,16 +141,36 @@ const handleLogin = async () => {
         formData.append('username', username.value)
         formData.append('password', password.value)
 
-        const response = await $api.post('/auth/token', formData, {
-             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        // Login to get token
+        const response: any = await $fetch('/api/auth/token', {
+             method: 'POST',
+             body: formData
         })
         
-        authStore.setToken(response.data.access_token)
-        navigateTo('/')
+        authStore.setToken(response.access_token)
+        
+        // Fetch user details to get tenant info immediately
+        try {
+          const user: any = await $fetch('/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${response.access_token}`
+            }
+          })
+          
+          if (user.tenant_id) {
+             // Fetch tenant details if needed, or just rely on store
+             // For now, we rely on the token/user data
+          }
+        } catch (meError) {
+          console.error('Failed to fetch user details:', meError)
+        }
+
+        // Force reload to ensure cookie is picked up by middleware/plugins
+        window.location.href = '/'
         
     } catch (e: any) {
         console.error(e)
-        error.value = e.response?.data?.detail || 'Login failed. Check credentials.'
+        error.value = e.data?.detail || 'Login failed. Check credentials.'
     } finally {
         loading.value = false
     }

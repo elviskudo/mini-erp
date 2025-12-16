@@ -1,141 +1,164 @@
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold text-gray-900">Warehouses</h2>
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-semibold text-gray-900">Warehouses</h2>
+        <p class="text-gray-500">Manage warehouse locations</p>
+      </div>
       <UButton icon="i-heroicons-plus" color="primary" @click="openCreateModal">Add Warehouse</UButton>
     </div>
 
-    <UCard>
+    <UCard :ui="{ body: { padding: '' } }">
       <UTable :columns="columns" :rows="warehouses" :loading="loading">
          <template #actions-data="{ row }">
-             <UButton icon="i-heroicons-map-pin" color="gray" variant="ghost" size="xs" @click="viewLocations(row)" />
-        </template>
+            <div class="flex gap-1">
+              <UButton icon="i-heroicons-map-pin" color="gray" variant="ghost" size="xs" @click="viewLocations(row)" />
+              <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="editWarehouse(row)" />
+            </div>
+         </template>
       </UTable>
     </UCard>
 
-    <!-- Create Warehouse Modal -->
-    <UModal v-model="isOpen">
-      <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100' }">
-        <template #header>
-          <h3 class="text-base font-semibold leading-6 text-gray-900">
-            Create Warehouse
-          </h3>
-        </template>
+    <!-- Create/Edit Warehouse Slideover -->
+    <FormSlideover 
+      v-model="isOpen" 
+      :title="editMode ? 'Edit Warehouse' : 'Add Warehouse'"
+      :loading="submitting"
+      @submit="createWarehouse"
+    >
+      <div class="space-y-4">
+        <UFormGroup label="Name" name="name" required>
+          <UInput v-model="form.name" placeholder="e.g. Central Warehouse" />
+        </UFormGroup>
+        <UFormGroup label="Address" name="address">
+          <UTextarea v-model="form.address" placeholder="e.g. 123 Industrial Park" rows="3" />
+        </UFormGroup>
+      </div>
+    </FormSlideover>
 
-        <form @submit.prevent="createWarehouse" class="space-y-4">
-            <UFormGroup label="Name" name="name" required>
-                <UInput v-model="form.name" placeholder="e.g. Central Warehouse" />
-            </UFormGroup>
-             <UFormGroup label="Address" name="address">
-                <UInput v-model="form.address" placeholder="e.g. 123 Industrial Park" />
-            </UFormGroup>
-
-            <div class="flex justify-end gap-2 mt-4">
-                <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" :loading="submitting">Save</UButton>
+    <!-- View Locations Slideover -->
+    <USlideover v-model="isLocationsOpen">
+      <div class="flex flex-col h-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b">
+          <h3 class="text-lg font-semibold">Locations in {{ selectedWarehouse?.name }}</h3>
+          <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="isLocationsOpen = false" />
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
+          <UButton size="sm" icon="i-heroicons-plus" @click="openCreateLocation">Add Location</UButton>
+          
+          <div class="space-y-2">
+            <div v-for="loc in locations" :key="loc.id" class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+              <div>
+                <p class="font-medium">{{ loc.name }}</p>
+                <p class="text-sm text-gray-500">{{ loc.code }}</p>
+              </div>
+              <UBadge color="gray" variant="subtle">{{ loc.type }}</UBadge>
             </div>
-        </form>
-      </UCard>
-    </UModal>
-
-    <!-- View Locations Modal (Simple List for now) -->
-    <UModal v-model="isLocationsOpen">
-         <UCard>
-            <template #header>
-                <div class="flex justify-between items-center">
-                    <h3 class="font-semibold">Locations in {{ selectedWarehouse?.name }}</h3>
-                    <UButton size="xs" icon="i-heroicons-plus" @click="openCreateLocation">Add Location</UButton>
-                </div>
-            </template>
-            
-            <div class="space-y-2">
-                 <div v-for="loc in locations" :key="loc.id" class="flex justify-between p-2 bg-gray-50 rounded">
-                    <span>{{ loc.name }} ({{ loc.code }})</span>
-                    <span class="text-xs text-gray-500">{{ loc.type }}</span>
-                 </div>
-                 <div v-if="locations.length === 0" class="text-sm text-gray-400">No locations found.</div>
+            <div v-if="locations.length === 0" class="text-sm text-gray-400 text-center py-8">
+              No locations found.
             </div>
-
-            <!-- Nested Create Location Form -->
-             <div v-if="isCreatingLocation" class="mt-4 p-4 border rounded bg-white">
-                <h4 class="text-sm font-medium mb-2">New Location</h4>
-                <form @submit.prevent="createLocation" class="space-y-2">
-                    <UInput v-model="locForm.name" placeholder="Location Name" size="sm" />
-                    <UInput v-model="locForm.code" placeholder="Code (e.g. A-01)" size="sm" />
-                    <USelect v-model="locForm.type" :options="['Receiving', 'Storage', 'Picking', 'Production', 'Quarantine']" size="sm" />
-                    <div class="flex justify-end gap-2">
-                        <UButton size="2xs" color="gray" @click="isCreatingLocation = false">Cancel</UButton>
-                        <UButton size="2xs" type="submit" :loading="locSubmitting">Add</UButton>
-                    </div>
-                </form>
-             </div>
-         </UCard>
-    </UModal>
+          </div>
+          
+          <!-- Nested Create Location Form -->
+          <div v-if="isCreatingLocation" class="p-4 border rounded-lg bg-white">
+            <h4 class="text-sm font-medium mb-3">New Location</h4>
+            <form @submit.prevent="createLocation" class="space-y-3">
+              <UFormGroup label="Name" required>
+                <UInput v-model="locForm.name" placeholder="Location Name" size="sm" />
+              </UFormGroup>
+              <UFormGroup label="Code" required>
+                <UInput v-model="locForm.code" placeholder="e.g. A-01" size="sm" />
+              </UFormGroup>
+              <UFormGroup label="Type">
+                <USelect v-model="locForm.type" :options="['Receiving', 'Storage', 'Picking', 'Production', 'Quarantine']" size="sm" />
+              </UFormGroup>
+              <div class="flex justify-end gap-2">
+                <UButton size="sm" color="gray" variant="ghost" @click="isCreatingLocation = false">Cancel</UButton>
+                <UButton size="sm" type="submit" :loading="locSubmitting">Add Location</UButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </USlideover>
   </div>
 </template>
 
 <script setup lang="ts">
-const { $api } = useNuxtApp()
+definePageMeta({
+  middleware: 'auth'
+})
+
 const isOpen = ref(false)
 const isLocationsOpen = ref(false)
 const isCreatingLocation = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
 const locSubmitting = ref(false)
+const editMode = ref(false)
 
-const warehouses = ref([])
-const locations = ref([])
-const selectedWarehouse = ref(null)
+const warehouses = ref<any[]>([])
+const locations = ref<any[]>([])
+const selectedWarehouse = ref<any>(null)
 
 const columns = [
   { key: 'name', label: 'Name' },
   { key: 'address', label: 'Address' },
-  { key: 'actions', label: 'Locations' }
+  { key: 'actions', label: '' }
 ]
 
-const form = reactive({ name: '', address: '' })
+const form = reactive({ id: '', name: '', address: '' })
 const locForm = reactive({ name: '', code: '', type: 'Storage' })
 
 const fetchWarehouses = async () => {
     loading.value = true
     try {
-        const res = await $api.get('/inventory/warehouses')
-        warehouses.value = res.data
+        const res: any = await $fetch('/api/inventory/warehouses')
+        warehouses.value = res
     } catch (e) { console.error(e) } 
     finally { loading.value = false }
 }
 
 const openCreateModal = () => {
+    form.id = ''
     form.name = ''
     form.address = ''
+    editMode.value = false
+    isOpen.value = true
+}
+
+const editWarehouse = (row: any) => {
+    form.id = row.id
+    form.name = row.name
+    form.address = row.address || ''
+    editMode.value = true
     isOpen.value = true
 }
 
 const createWarehouse = async () => {
     submitting.value = true
     try {
-        await $api.post('/inventory/warehouses', form)
+        if (editMode.value) {
+            await $fetch(`/api/inventory/warehouses/${form.id}`, {
+                method: 'PUT',
+                body: { name: form.name, address: form.address }
+            })
+        } else {
+            await $fetch('/api/inventory/warehouses', {
+                method: 'POST',
+                body: form
+            })
+        }
         isOpen.value = false
         fetchWarehouses()
-    } catch (e) { alert('Failed') }
+    } catch (e) { console.error('Failed:', e) }
     finally { submitting.value = false }
 }
 
 const viewLocations = async (warehouse: any) => {
     selectedWarehouse.value = warehouse
-    // Fetch locations for this warehouse
-    // Assuming backend returns locations in warehouse object or separate endpoint?
-    // Checking backend/routers/inventory.py... 
-    // It has `read_warehouses` (selectinload(locations))... So `warehouse.locations` should exist if fetched correctly.
-    // However, the table rows might not have deep objects if we didn't type it well or if nuxt ui flattens it?
-    // Let's assume we need to re-fetch or use what we have.
-    // Ideally we should have a `GET /inventory/warehouses/{id}/locations` or just use the loaded data.
-    // Let's try to use `warehouse.locations` if available, else fetch.
-    if (warehouse.locations) {
-        locations.value = warehouse.locations
-    } else {
-        locations.value = [] // Fallback
-    }
+    locations.value = warehouse.locations || []
     isLocationsOpen.value = true
     isCreatingLocation.value = false
 }
@@ -151,18 +174,18 @@ const createLocation = async () => {
     if (!selectedWarehouse.value) return
     locSubmitting.value = true
     try {
-        const payload = {
-            warehouse_id: selectedWarehouse.value.id,
-            ...locForm
-        }
-        await $api.post('/inventory/locations', payload)
-        // Refresh locations - simplified by just re-fetching all warehouses for now or add to local list
-        // Let's re-fetch warehouses to be safe and update current view
+        await $fetch('/api/inventory/locations', {
+            method: 'POST',
+            body: {
+                warehouse_id: selectedWarehouse.value.id,
+                ...locForm
+            }
+        })
         await fetchWarehouses()
         const updated = warehouses.value.find(w => w.id === selectedWarehouse.value.id)
-        if (updated) locations.value = updated.locations
+        if (updated) locations.value = updated.locations || []
         isCreatingLocation.value = false
-    } catch (e) { alert('Failed to add location') }
+    } catch (e) { console.error('Failed:', e) }
     finally { locSubmitting.value = false }
 }
 

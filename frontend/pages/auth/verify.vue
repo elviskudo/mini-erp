@@ -55,10 +55,9 @@ definePageMeta({
 })
 
 const route = useRoute()
-const { $api } = useNuxtApp()
 
 const email = ref(route.query.email as string || '')
-const otpCode = ref('')
+const otpCode = ref(route.query.otp as string || '')  // Auto-fill from URL
 const error = ref('')
 const success = ref('')
 const loading = ref(false)
@@ -82,7 +81,10 @@ onMounted(() => {
   if (!email.value) {
     navigateTo('/auth/login')
   }
-  startCooldown()
+  // Only start cooldown if no OTP in URL (email was actually sent)
+  if (!route.query.otp) {
+    startCooldown()
+  }
 })
 
 onUnmounted(() => {
@@ -97,19 +99,22 @@ const handleVerify = async () => {
   loading.value = true
   
   try {
-    const response = await $api.post('/auth/verify-otp', {
-      email: email.value,
-      otp_code: otpCode.value
+    const response: any = await $fetch('/api/auth/verify-otp', {
+      method: 'POST',
+      body: {
+        email: email.value,
+        otp_code: otpCode.value
+      }
     })
     
-    success.value = response.data.message
+    success.value = response.message || 'Email verified successfully!'
     
     setTimeout(() => {
       navigateTo('/auth/login')
     }, 2000)
     
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Verification failed'
+    error.value = e.data?.detail || 'Verification failed'
   } finally {
     loading.value = false
   }
@@ -120,12 +125,21 @@ const handleResend = async () => {
   resending.value = true
   
   try {
-    await $api.post('/auth/send-otp', {
-      email: email.value
+    const response: any = await $fetch('/api/auth/send-otp', {
+      method: 'POST',
+      body: {
+        email: email.value
+      }
     })
+    
+    // Auto-fill OTP if returned (dev mode)
+    if (response.otp_code) {
+      otpCode.value = response.otp_code
+    }
+    
     startCooldown()
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Failed to resend code'
+    error.value = e.data?.detail || 'Failed to resend code'
   } finally {
     resending.value = false
   }

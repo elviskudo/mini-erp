@@ -58,11 +58,13 @@ class RegisterOwnerRequest(BaseModel):
     full_name: Optional[str] = None
 
 
+
 class RegisterOwnerResponse(BaseModel):
     user_id: str
     tenant_id: str
     email: str
     message: str
+    otp_code: Optional[str] = None  # For dev mode - auto-fill OTP input
 
 
 class FindCompanyResponse(BaseModel):
@@ -113,8 +115,18 @@ async def register_tenant(
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Domain already registered"
+                detail="Domain already exists"
             )
+    
+    # Check if name already exists
+    result = await db.execute(
+        select(Tenant).where(Tenant.name == request.name).limit(1)
+    )
+    if result.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Company name already exists"
+        )
     
     # Create tenant
     tenant = Tenant(
@@ -218,7 +230,8 @@ async def register_owner(
         user_id=str(user.id),
         tenant_id=str(tenant_uuid),
         email=request.email,
-        message="Owner registered. Please verify your email."
+        message="Owner registered. Please verify your email.",
+        otp_code=otp_code  # For dev mode - auto-fill OTP input
     )
 
 
@@ -248,6 +261,61 @@ async def find_company(
         domain=tenant.domain
     )
 
+
+@router.get("/find-by-domain/{domain}", response_model=FindCompanyResponse)
+async def find_by_domain(
+    domain: str,
+    db: AsyncSession = Depends(database.get_db)
+):
+    """
+    Find company by domain name.
+    Used for auto-redirect when domain already exists.
+    """
+    result = await db.execute(
+        select(Tenant).where(Tenant.domain == domain)
+    )
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found"
+        )
+    
+    return FindCompanyResponse(
+        id=str(tenant.id),
+        name=tenant.name,
+        company_code=tenant.company_code,
+        domain=tenant.domain
+    )
+
+
+@router.get("/find-by-name/{name}", response_model=FindCompanyResponse)
+async def find_by_name(
+    name: str,
+    db: AsyncSession = Depends(database.get_db)
+):
+    """
+    Find company by name.
+    Used for auto-redirect when company name already exists.
+    """
+    result = await db.execute(
+        select(Tenant).where(Tenant.name == name).limit(1)
+    )
+    tenant = result.scalars().first()
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found"
+        )
+    
+    return FindCompanyResponse(
+        id=str(tenant.id),
+        name=tenant.name,
+        company_code=tenant.company_code,
+        domain=tenant.domain
+    )
 
 @router.post("/request-join", response_model=RegisterOwnerResponse)
 async def request_join(

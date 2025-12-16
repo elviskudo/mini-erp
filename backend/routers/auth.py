@@ -24,6 +24,7 @@ class OTPVerify(BaseModel):
 class MessageResponse(BaseModel):
     message: str
     email: str = None
+    otp_code: str = None # For dev/testing purposes
 
 @router.post("/register", response_model=MessageResponse)
 async def register(user: schemas.UserCreate, db: AsyncSession = Depends(database.get_db)):
@@ -79,7 +80,7 @@ async def send_otp(request: OTPRequest, db: AsyncSession = Depends(database.get_
     # Send OTP email
     await send_otp_email(request.email, otp_code, user.username)
     
-    return {"message": "Verification code sent to your email", "email": request.email}
+    return {"message": "Verification code sent to your email", "email": request.email, "otp_code": otp_code}
 
 @router.post("/verify-otp", response_model=MessageResponse)
 async def verify_otp(request: OTPVerify, db: AsyncSession = Depends(database.get_db)):

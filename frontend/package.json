@@ -14,6 +14,7 @@
         "jwt-decode": "^4.0.0",
         "nuxt": "^3.8.0",
         "pinia": "^3.0.4",
+        "socket.io-client": "^4.8.1",
         "vue": "^3.3.0",
         "vue-router": "^4.0.0"
     },

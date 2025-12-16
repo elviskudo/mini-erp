@@ -83,7 +83,41 @@
           </UFormGroup>
 
           <UFormGroup label="Password" required>
-            <UInput v-model="owner.password" type="password" placeholder="Min 6 characters" />
+            <UInput v-model="owner.password" type="password" placeholder="Strong password" />
+            
+            <!-- Password Strength Indicator -->
+            <div class="mt-2 space-y-2">
+              <div class="flex gap-1">
+                <div 
+                  v-for="i in 5" 
+                  :key="i" 
+                  class="h-1.5 flex-1 rounded-full transition-all"
+                  :class="i <= passwordStrength.score ? strengthColors[passwordStrength.score] : 'bg-gray-200'"
+                />
+              </div>
+              <p class="text-xs" :class="strengthTextColors[passwordStrength.score]">
+                {{ passwordStrength.label }}
+              </p>
+              
+              <!-- Requirements Checklist -->
+              <div class="text-xs space-y-1 mt-2">
+                <div :class="passwordChecks.minLength ? 'text-green-600' : 'text-gray-400'">
+                  {{ passwordChecks.minLength ? '✓' : '○' }} Minimal 8 karakter
+                </div>
+                <div :class="passwordChecks.hasUpper ? 'text-green-600' : 'text-gray-400'">
+                  {{ passwordChecks.hasUpper ? '✓' : '○' }} 1 huruf besar (A-Z)
+                </div>
+                <div :class="passwordChecks.hasLower ? 'text-green-600' : 'text-gray-400'">
+                  {{ passwordChecks.hasLower ? '✓' : '○' }} 1 huruf kecil (a-z)
+                </div>
+                <div :class="passwordChecks.hasNumber ? 'text-green-600' : 'text-gray-400'">
+                  {{ passwordChecks.hasNumber ? '✓' : '○' }} 1 angka (0-9)
+                </div>
+                <div :class="passwordChecks.hasSymbol ? 'text-green-600' : 'text-gray-400'">
+                  {{ passwordChecks.hasSymbol ? '✓' : '○' }} 1 simbol (!@#$%^&*...)
+                </div>
+              </div>
+            </div>
           </UFormGroup>
 
           <UAlert v-if="error" color="red" variant="soft" :title="error" icon="i-heroicons-x-circle" />
@@ -134,7 +168,66 @@ const owner = reactive({
 const currencies = ['USD', 'EUR', 'IDR', 'GBP', 'JPY', 'SGD']
 const timezones = ['UTC', 'Asia/Jakarta', 'Asia/Singapore', 'America/New_York', 'Europe/London']
 
+// Password strength colors
+const strengthColors: Record<number, string> = {
+  0: 'bg-gray-200',
+  1: 'bg-red-500',
+  2: 'bg-orange-500',
+  3: 'bg-yellow-500',
+  4: 'bg-lime-500',
+  5: 'bg-green-500'
+}
+
+const strengthTextColors: Record<number, string> = {
+  0: 'text-gray-400',
+  1: 'text-red-500',
+  2: 'text-orange-500',
+  3: 'text-yellow-600',
+  4: 'text-lime-600',
+  5: 'text-green-600'
+}
+
+// Password requirement checks
+const passwordChecks = computed(() => ({
+  minLength: owner.password.length >= 8,
+  hasUpper: /[A-Z]/.test(owner.password),
+  hasLower: /[a-z]/.test(owner.password),
+  hasNumber: /[0-9]/.test(owner.password),
+  hasSymbol: /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]/.test(owner.password)
+}))
+
+// Password strength score (0-5)
+const passwordStrength = computed(() => {
+  const checks = passwordChecks.value
+  let score = 0
+  
+  if (checks.minLength) score++
+  if (checks.hasUpper) score++
+  if (checks.hasLower) score++
+  if (checks.hasNumber) score++
+  if (checks.hasSymbol) score++
+  
+  const labels: Record<number, string> = {
+    0: 'Masukkan password',
+    1: 'Sangat Lemah',
+    2: 'Lemah',
+    3: 'Cukup',
+    4: 'Kuat',
+    5: 'Sangat Kuat'
+  }
+  
+  return { score, label: labels[score] }
+})
+
+// Check if password meets all requirements
+const isPasswordValid = computed(() => {
+  const checks = passwordChecks.value
+  return checks.minLength && checks.hasUpper && checks.hasLower && checks.hasNumber && checks.hasSymbol
+})
+
 const registerCompany = async () => {
+  console.log('=== registerCompany called ===')
+  console.log('company.name:', company.name)
   error.value = ''
   
   if (!company.name.trim()) {
@@ -145,19 +238,65 @@ const registerCompany = async () => {
   loading.value = true
   
   try {
-    const response = await $api.post('/saas/register-tenant', {
-      name: company.name,
-      domain: company.domain || null,
-      currency: company.currency,
-      timezone: company.timezone
+    const response: any = await $fetch('/api/saas/register-tenant', {
+      method: 'POST',
+      body: {
+        name: company.name,
+        domain: company.domain || null,
+        currency: company.currency,
+        timezone: company.timezone
+      }
     })
     
-    tenantId.value = response.data.id
-    companyCode.value = response.data.company_code
+    console.log('API Response:', response)
+    tenantId.value = response.id
+    companyCode.value = response.company_code
+    console.log('Setting step to 2')
     step.value = 2
+    console.log('Step is now:', step.value)
     
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Failed to register company'
+    console.error('Register error:', e)
+    const errorDetail = e.data?.detail || e.message || 'Failed to register company'
+    
+    // Check if domain already registered - auto-redirect to step 2
+    if (errorDetail.toLowerCase().includes('domain') && errorDetail.toLowerCase().includes('exist')) {
+      console.log('Domain already exists, fetching existing tenant...')
+      try {
+        // Try to find company by domain
+        const existingTenant: any = await $fetch(`/api/saas/find-by-domain/${company.domain}`)
+        if (existingTenant) {
+          company.name = existingTenant.name
+          tenantId.value = existingTenant.id
+          companyCode.value = existingTenant.company_code
+          step.value = 2
+          error.value = ''
+          return
+        }
+      } catch (findError) {
+        console.error('Could not find existing tenant:', findError)
+      }
+    }
+    
+    // Check if name already registered - auto-redirect to step 2
+    if (errorDetail.toLowerCase().includes('already') && errorDetail.toLowerCase().includes('exist')) {
+      console.log('Company already exists, fetching existing tenant...')
+      try {
+        // Try to find company by name
+        const existingTenant: any = await $fetch(`/api/saas/find-by-name/${encodeURIComponent(company.name)}`)
+        if (existingTenant) {
+          tenantId.value = existingTenant.id
+          companyCode.value = existingTenant.company_code
+          step.value = 2
+          error.value = ''
+          return
+        }
+      } catch (findError) {
+        console.error('Could not find existing tenant:', findError)
+      }
+    }
+    
+    error.value = errorDetail
   } finally {
     loading.value = false
   }
@@ -172,30 +311,36 @@ const registerOwner = async () => {
     return
   }
   
-  if (owner.password.length < 6) {
-    error.value = 'Password must be at least 6 characters'
+  if (!isPasswordValid.value) {
+    error.value = 'Password harus memenuhi semua persyaratan'
     return
   }
   
   loading.value = true
   
   try {
-    await $api.post('/saas/register-owner', {
-      tenant_id: tenantId.value,
-      username: owner.username,
-      email: owner.email,
-      password: owner.password,
-      full_name: owner.fullName || null
+    const response: any = await $fetch('/api/saas/register-owner', {
+      method: 'POST',
+      body: {
+        tenant_id: tenantId.value,
+        username: owner.username,
+        email: owner.email,
+        password: owner.password,
+        full_name: owner.fullName || null
+      }
     })
     
     success.value = 'Account created! Redirecting to verify email...'
     
+    // Pass OTP code in URL for dev mode auto-fill
+    const otpParam = response.otp_code ? `&otp=${response.otp_code}` : ''
     setTimeout(() => {
-      navigateTo(`/auth/verify?email=${encodeURIComponent(owner.email)}`)
+      navigateTo(`/auth/verify?email=${encodeURIComponent(owner.email)}${otpParam}`)
     }, 1500)
     
   } catch (e: any) {
-    error.value = e.response?.data?.detail || 'Failed to register owner'
+    console.error('Register owner error:', e)
+    error.value = e.data?.detail || e.message || 'Failed to register owner'
   } finally {
     loading.value = false
   }

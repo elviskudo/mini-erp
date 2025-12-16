@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import jwt_decode from 'jwt-decode'
+import { jwtDecode } from 'jwt-decode'
 
 interface User {
     id: string
@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', {
             this.token = token
             this.isAuthenticated = true
             try {
-                const decoded = jwt_decode(token) as User & { tenant_id?: string }
+                const decoded = jwtDecode(token) as User & { tenant_id?: string }
                 this.user = decoded
                 // Set tenant from token if available
                 if (decoded.tenant_id) {
@@ -37,8 +37,8 @@ export const useAuthStore = defineStore('auth', {
             } catch (e) {
                 this.user = null
             }
-            // Save to cookie
-            const cookie = useCookie('auth_token')
+            // Save to cookie with 7 days expiry
+            const cookie = useCookie('auth_token', { maxAge: 60 * 60 * 24 * 7 })
             cookie.value = token
         },
         setTenant(tenant: Tenant) {

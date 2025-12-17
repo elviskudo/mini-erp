@@ -8,10 +8,15 @@ from database import Base
 
 
 class UserRole(str, enum.Enum):
-    ADMIN = "Admin"
-    OPERATOR = "Operator"
-    LAB_TECH = "Lab_Tech"
-    MANAGER = "Manager"
+    ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
+    PRODUCTION = "PRODUCTION"
+    WAREHOUSE = "WAREHOUSE"
+    STAFF = "STAFF"
+    PROCUREMENT = "PROCUREMENT"
+    FINANCE = "FINANCE"
+    HR = "HR"
+    LAB_TECH = "LAB_TECH"
 
 
 class User(Base):
@@ -21,7 +26,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(Enum(UserRole), default=UserRole.OPERATOR)
+    role = Column(Enum(UserRole), default=UserRole.STAFF)
     
     # Email verification
     is_verified = Column(Boolean, default=False)

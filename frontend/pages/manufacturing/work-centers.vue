@@ -47,8 +47,33 @@
           </UFormGroup>
         </div>
         
-        <UFormGroup label="Location">
-          <UInput v-model="form.location" placeholder="e.g. Building A" />
+        <!-- Map Location Picker -->
+        <UFormGroup label="Location (Click map to set)">
+          <ClientOnly>
+            <div class="relative rounded-lg overflow-hidden border border-gray-300">
+              <div id="workcenter-map" class="h-48 w-full"></div>
+              <div v-if="mapLoading" class="absolute inset-0 flex items-center justify-center bg-gray-100">
+                <UIcon name="i-heroicons-arrow-path" class="w-6 h-6 animate-spin text-gray-500" />
+              </div>
+            </div>
+            <template #fallback>
+              <div class="h-48 w-full bg-gray-100 rounded-lg flex items-center justify-center">
+                <span class="text-gray-500">Loading map...</span>
+              </div>
+            </template>
+          </ClientOnly>
+          <p v-if="form.latitude && form.longitude" class="text-xs text-gray-500 mt-1">
+            📍 Lat: {{ form.latitude.toFixed(6) }}, Lng: {{ form.longitude.toFixed(6) }}
+          </p>
+        </UFormGroup>
+        
+        <UFormGroup label="Address">
+          <UTextarea 
+            v-model="form.location" 
+            placeholder="Address will be filled when you click on the map" 
+            rows="2"
+            readonly
+          />
         </UFormGroup>
       </div>
     </FormSlideover>
@@ -66,6 +91,9 @@ const loading = ref(false)
 const submitting = ref(false)
 const editMode = ref(false)
 const workCenters = ref<any[]>([])
+const mapLoading = ref(true)
+let map: any = null
+let marker: any = null
 
 const columns = [
   { key: 'code', label: 'Code' },
@@ -82,7 +110,9 @@ const form = reactive({
     code: '',
     cost_per_hour: 0,
     capacity_hours: 8,
-    location: ''
+    location: '',
+    latitude: null as number | null,
+    longitude: null as number | null
 })
 
 const resetForm = () => {
@@ -92,8 +122,14 @@ const resetForm = () => {
         code: '',
         cost_per_hour: 0,
         capacity_hours: 8,
-        location: ''
+        location: '',
+        latitude: null,
+        longitude: null
     })
+    // Reset map state
+    map = null
+    marker = null
+    mapLoading.value = true
 }
 
 const fetchWorkCenters = async () => {
@@ -112,12 +148,107 @@ const openCreate = () => {
     resetForm()
     editMode.value = false
     isOpen.value = true
+    // Wait for slideover to open then init map
+    setTimeout(() => initMap(), 300)
 }
 
 const openEdit = (row: any) => {
     Object.assign(form, row)
     editMode.value = true
     isOpen.value = true
+    // Wait for slideover to open then init map with existing location
+    setTimeout(() => initMap(), 300)
+}
+
+// ============ Map Logic ============
+const initMap = async () => {
+  if (typeof window === 'undefined') return
+  
+  const mapContainer = document.getElementById('workcenter-map')
+  if (!mapContainer || map) return
+  
+  // Load Leaflet dynamically
+  const L = await import('leaflet')
+  
+  // Load Leaflet CSS
+  if (!document.querySelector('link[href*="leaflet.css"]')) {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    document.head.appendChild(link)
+  }
+  
+  // Default or existing location
+  let defaultLat = form.latitude || -6.2088
+  let defaultLng = form.longitude || 106.8456
+  
+  map = L.map('workcenter-map').setView([defaultLat, defaultLng], 13)
+  
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map)
+  
+  mapLoading.value = false
+  
+  // If editing with existing coordinates, place marker
+  if (form.latitude && form.longitude) {
+    marker = L.marker([form.latitude, form.longitude]).addTo(map)
+    map.setView([form.latitude, form.longitude], 15)
+  } else {
+    // Try to get user's current location
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords
+          map.setView([latitude, longitude], 15)
+          
+          if (marker) {
+            marker.setLatLng([latitude, longitude])
+          } else {
+            marker = L.marker([latitude, longitude]).addTo(map)
+          }
+          
+          form.latitude = latitude
+          form.longitude = longitude
+          await reverseGeocode(latitude, longitude)
+        },
+        () => { /* Keep default location */ },
+        { enableHighAccuracy: true, timeout: 10000 }
+      )
+    }
+  }
+  
+  // Add click handler
+  map.on('click', async (e: any) => {
+    const { lat, lng } = e.latlng
+    
+    if (marker) {
+      marker.setLatLng([lat, lng])
+    } else {
+      marker = L.marker([lat, lng]).addTo(map)
+    }
+    
+    form.latitude = lat
+    form.longitude = lng
+    await reverseGeocode(lat, lng)
+  })
+}
+
+const reverseGeocode = async (lat: number, lng: number) => {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    )
+    const data = await response.json()
+    
+    if (data.display_name) {
+      form.location = data.display_name
+    }
+  } catch (e) {
+    console.error('Reverse geocode failed:', e)
+    form.location = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`
+  }
 }
 
 const saveWorkCenter = async () => {

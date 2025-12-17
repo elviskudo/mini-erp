@@ -24,6 +24,7 @@ import models
 from models.models_saas import Tenant, TenantMember, MemberRole, SubscriptionTier
 from models.user import User, UserRole
 from services.email_service import generate_otp, get_otp_expiry, send_otp_email
+from routers.menu import grant_config_menu_permission, grant_all_menu_permissions
 
 
 router = APIRouter(prefix="/saas", tags=["SaaS Onboarding"])
@@ -203,7 +204,7 @@ async def register_owner(
         username=request.username,
         email=request.email,
         password_hash=pwd_context.hash(request.password),
-        role=UserRole.ADMIN,
+        role=UserRole.MANAGER,
         tenant_id=tenant_uuid,
         is_verified=False,
         otp_code=otp_code,
@@ -220,6 +221,9 @@ async def register_owner(
         joined_at=datetime.utcnow()
     )
     db.add(member)
+    
+    # Grant config menu permission only (until setup is complete)
+    await grant_config_menu_permission(db, tenant_uuid, user.role.value)
     
     await db.commit()
     
@@ -357,7 +361,7 @@ async def request_join(
         username=request.username,
         email=request.email,
         password_hash=pwd_context.hash(request.password),
-        role=UserRole.OPERATOR,
+        role=UserRole.STAFF,
         tenant_id=tenant.id,
         is_verified=False,
         otp_code=otp_code,

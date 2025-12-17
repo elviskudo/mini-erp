@@ -27,9 +27,9 @@ def upgrade() -> None:
     """
     
     # Create enum types
-    op.execute("DO $$ BEGIN CREATE TYPE subscriptiontier AS ENUM ('FREE_TRIAL', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-    op.execute("DO $$ BEGIN CREATE TYPE memberrole AS ENUM ('OWNER', 'ADMIN', 'MEMBER', 'PENDING'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-    op.execute("DO $$ BEGIN CREATE TYPE userrole AS ENUM ('ADMIN', 'MANAGER', 'OPERATOR', 'LAB_TECH'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE subscriptiontier AS ENUM ('FREE_TRIAL', 'MAKER', 'GROWTH', 'ENTERPRISE'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE memberrole AS ENUM ('owner', 'admin', 'member', 'pending'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE userrole AS ENUM ('ADMIN', 'MANAGER', 'PRODUCTION', 'WAREHOUSE', 'STAFF', 'PROCUREMENT', 'FINANCE', 'HR', 'LAB_TECH'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
     
     # Create tenants table (core SaaS table)
     op.execute("""
@@ -45,6 +45,7 @@ def upgrade() -> None:
             currency VARCHAR DEFAULT 'USD',
             timezone VARCHAR DEFAULT 'UTC',
             logo_url VARCHAR,
+            is_setup_complete BOOLEAN DEFAULT false,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -59,7 +60,7 @@ def upgrade() -> None:
             username VARCHAR NOT NULL UNIQUE,
             email VARCHAR NOT NULL UNIQUE,
             password_hash VARCHAR NOT NULL,
-            role userrole DEFAULT 'OPERATOR',
+            role userrole DEFAULT 'STAFF',
             tenant_id UUID REFERENCES tenants(id),
             is_verified BOOLEAN DEFAULT false,
             otp_code VARCHAR(6),
@@ -69,23 +70,58 @@ def upgrade() -> None:
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_users_tenant_id ON users(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_users_email ON users(email)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_users_username ON users(username)")
     
     # Create tenant_members table (for multi-tenant membership)
     op.execute("""
         CREATE TABLE IF NOT EXISTS tenant_members (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL REFERENCES tenants(id),
-            user_id UUID NOT NULL REFERENCES users(id),
-            role memberrole NOT NULL,
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role memberrole NOT NULL DEFAULT 'member',
+            invited_by UUID REFERENCES users(id),
             invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            joined_at TIMESTAMP
+            joined_at TIMESTAMP,
+            UNIQUE(tenant_id, user_id)
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_tenant_members_tenant_id ON tenant_members(tenant_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_tenant_members_user_id ON tenant_members(user_id)")
+    
+    # Create menus table (for database-driven menu system)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS menus (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            code VARCHAR NOT NULL UNIQUE,
+            label VARCHAR NOT NULL,
+            icon VARCHAR,
+            path VARCHAR,
+            parent_id UUID REFERENCES menus(id),
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT true
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_menus_code ON menus(code)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_menus_parent_id ON menus(parent_id)")
+    
+    # Create role_menu_permissions table (for role-based menu access per tenant)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS role_menu_permissions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            role VARCHAR NOT NULL,
+            menu_id UUID NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+            can_access BOOLEAN DEFAULT true
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_role_menu_permissions_tenant_id ON role_menu_permissions(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_role_menu_permissions_menu_id ON role_menu_permissions(menu_id)")
 
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS role_menu_permissions")
+    op.execute("DROP TABLE IF EXISTS menus")
     op.execute("DROP TABLE IF EXISTS tenant_members")
     op.execute("DROP TABLE IF EXISTS users")
     op.execute("DROP TABLE IF EXISTS tenants")

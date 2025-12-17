@@ -12,8 +12,11 @@ class ProductType(str, Enum):
 class WorkCenterBase(BaseModel):
     code: str
     name: str
-    hourly_rate: float = 0.0
-    capacity_per_hour: float = 0.0
+    cost_per_hour: float = 0.0
+    capacity_hours: float = 8.0
+    location: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class WorkCenterCreate(WorkCenterBase):
     pass

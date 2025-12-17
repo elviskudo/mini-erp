@@ -1,0 +1,233 @@
+<template>
+  <div class="p-6 space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">User Management</h1>
+        <p class="text-gray-500 dark:text-gray-400">Manage users in your organization</p>
+      </div>
+      <UButton icon="i-heroicons-plus" @click="openAddUser">Add User</UButton>
+    </div>
+
+    <!-- Users Table -->
+    <UCard>
+      <UTable :rows="users" :columns="columns" :loading="loading">
+        <template #role-data="{ row }">
+          <UBadge :color="getRoleColor(row.role)" variant="soft">{{ row.role }}</UBadge>
+        </template>
+        <template #is_verified-data="{ row }">
+          <UBadge :color="row.is_verified ? 'green' : 'amber'" variant="soft">
+            {{ row.is_verified ? 'Verified' : 'Pending' }}
+          </UBadge>
+        </template>
+        <template #actions-data="{ row }">
+          <div class="flex gap-2">
+            <UButton variant="ghost" icon="i-heroicons-pencil" size="xs" @click="editUser(row)" />
+            <UButton variant="ghost" icon="i-heroicons-trash" size="xs" color="red" @click="confirmDelete(row)" />
+          </div>
+        </template>
+      </UTable>
+    </UCard>
+
+    <!-- Add/Edit User Modal -->
+    <UModal v-model="showModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">{{ editingUser ? 'Edit User' : 'Add New User' }}</h3>
+        </template>
+        
+        <form class="space-y-4" @submit.prevent="saveUser">
+          <UFormGroup label="Username" required>
+            <UInput v-model="form.username" placeholder="Enter username" />
+          </UFormGroup>
+          <UFormGroup label="Email" required>
+            <UInput v-model="form.email" type="email" placeholder="Enter email" />
+          </UFormGroup>
+          <UFormGroup label="Role" required>
+            <USelect v-model="form.role" :options="roleOptions" placeholder="Select role" />
+          </UFormGroup>
+          <UFormGroup label="Password" :required="!editingUser">
+            <UInput v-model="form.password" type="password" :placeholder="editingUser ? 'Leave blank to keep current' : 'Enter password'" />
+          </UFormGroup>
+        </form>
+        
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showModal = false">Cancel</UButton>
+            <UButton @click="saveUser" :loading="saving">{{ editingUser ? 'Update' : 'Create' }}</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- Delete Confirmation Modal -->
+    <UModal v-model="showDeleteModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold text-red-600">Delete User</h3>
+        </template>
+        <p>Are you sure you want to delete <strong>{{ deletingUser?.username }}</strong>? This action cannot be undone.</p>
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showDeleteModal = false">Cancel</UButton>
+            <UButton color="red" @click="deleteUser" :loading="deleting">Delete</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+  </div>
+</template>
+
+<script setup lang="ts">
+definePageMeta({ layout: 'default' })
+
+const toast = useToast()
+
+// State
+const users = ref<any[]>([])
+const loading = ref(true)
+const showModal = ref(false)
+const showDeleteModal = ref(false)
+const saving = ref(false)
+const deleting = ref(false)
+const editingUser = ref<any>(null)
+const deletingUser = ref<any>(null)
+
+const form = reactive({
+  username: '',
+  email: '',
+  role: 'STAFF',
+  password: ''
+})
+
+const roleOptions = [
+  { label: 'Manager', value: 'MANAGER' },
+  { label: 'Production', value: 'PRODUCTION' },
+  { label: 'Warehouse', value: 'WAREHOUSE' },
+  { label: 'Staff', value: 'STAFF' },
+  { label: 'Procurement', value: 'PROCUREMENT' },
+  { label: 'Finance', value: 'FINANCE' },
+  { label: 'HR', value: 'HR' },
+  { label: 'Lab Tech', value: 'LAB_TECH' }
+]
+
+const columns = [
+  { key: 'username', label: 'Username' },
+  { key: 'email', label: 'Email' },
+  { key: 'role', label: 'Role' },
+  { key: 'is_verified', label: 'Status' },
+  { key: 'actions', label: '' }
+]
+
+const getRoleColor = (role: string) => {
+  const colors: Record<string, string> = {
+    ADMIN: 'red',
+    MANAGER: 'purple',
+    PRODUCTION: 'blue',
+    WAREHOUSE: 'teal',
+    STAFF: 'gray',
+    PROCUREMENT: 'orange',
+    FINANCE: 'green',
+    HR: 'pink',
+    LAB_TECH: 'cyan'
+  }
+  return colors[role] || 'gray'
+}
+
+// Fetch users
+const fetchUsers = async () => {
+  loading.value = true
+  try {
+    const data = await $fetch<any[]>('/api/users')
+    users.value = data
+  } catch (e) {
+    console.error('Failed to fetch users:', e)
+    users.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+// Open add user modal
+const openAddUser = () => {
+  editingUser.value = null
+  form.username = ''
+  form.email = ''
+  form.role = 'STAFF'
+  form.password = ''
+  showModal.value = true
+}
+
+// Edit user
+const editUser = (user: any) => {
+  editingUser.value = user
+  form.username = user.username
+  form.email = user.email
+  form.role = user.role
+  form.password = ''
+  showModal.value = true
+}
+
+// Save user
+const saveUser = async () => {
+  saving.value = true
+  try {
+    if (editingUser.value) {
+      await $fetch(`/api/users/${editingUser.value.id}`, {
+        method: 'PUT',
+        body: {
+          username: form.username,
+          email: form.email,
+          role: form.role,
+          ...(form.password && { password: form.password })
+        }
+      })
+      toast.add({ title: 'User updated successfully' })
+    } else {
+      await $fetch('/api/users', {
+        method: 'POST',
+        body: {
+          username: form.username,
+          email: form.email,
+          role: form.role,
+          password: form.password
+        }
+      })
+      toast.add({ title: 'User created successfully' })
+    }
+    showModal.value = false
+    await fetchUsers()
+  } catch (e: any) {
+    toast.add({ title: 'Error', description: e.data?.detail || 'Failed to save user', color: 'red' })
+  } finally {
+    saving.value = false
+  }
+}
+
+// Confirm delete
+const confirmDelete = (user: any) => {
+  deletingUser.value = user
+  showDeleteModal.value = true
+}
+
+// Delete user
+const deleteUser = async () => {
+  if (!deletingUser.value) return
+  deleting.value = true
+  try {
+    await $fetch(`/api/users/${deletingUser.value.id}`, { method: 'DELETE' })
+    toast.add({ title: 'User deleted successfully' })
+    showDeleteModal.value = false
+    await fetchUsers()
+  } catch (e: any) {
+    toast.add({ title: 'Error', description: e.data?.detail || 'Failed to delete user', color: 'red' })
+  } finally {
+    deleting.value = false
+  }
+}
+
+// Init
+onMounted(() => {
+  fetchUsers()
+})
+</script>

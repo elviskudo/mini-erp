@@ -49,6 +49,9 @@ class Tenant(Base):
     # Logo & branding
     logo_url = Column(String, nullable=True)
     
+    # Setup completion status
+    is_setup_complete = Column(Boolean, default=False)  # False until initial config wizard is completed
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

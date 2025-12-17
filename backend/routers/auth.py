@@ -128,7 +128,12 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.username, "role": user.role, "tenant_id": str(user.tenant_id) if user.tenant_id else None}, 
+        data={
+            "sub": user.username,
+            "username": user.username,  # For frontend display
+            "role": user.role.value if user.role else "STAFF",  # Ensure string value
+            "tenant_id": str(user.tenant_id) if user.tenant_id else None
+        }, 
         expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}

@@ -6,10 +6,15 @@ from datetime import datetime
 import re
 
 class UserRole(str, Enum):
-    ADMIN = "Admin"
-    OPERATOR = "Operator"
-    LAB_TECH = "Lab_Tech"
-    MANAGER = "Manager"
+    ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
+    PRODUCTION = "PRODUCTION"
+    WAREHOUSE = "WAREHOUSE"
+    STAFF = "STAFF"
+    PROCUREMENT = "PROCUREMENT"
+    FINANCE = "FINANCE"
+    HR = "HR"
+    LAB_TECH = "LAB_TECH"
 
 class UserBase(BaseModel):
     username: str = Field(
@@ -19,7 +24,7 @@ class UserBase(BaseModel):
         description="Username must be 3-50 characters"
     )
     email: EmailStr = Field(..., description="Valid email address required")
-    role: UserRole = UserRole.OPERATOR
+    role: UserRole = UserRole.STAFF
 
     @field_validator('username')
     @classmethod

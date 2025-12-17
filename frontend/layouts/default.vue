@@ -151,6 +151,12 @@
 import { useAuthStore } from '~/stores/auth'
 
 const authStore = useAuthStore()
+
+// Initialize auth from cookie on layout mount
+onMounted(() => {
+  authStore.initialize()
+})
+
 const route = useRoute()
 
 // Mobile sidebar state
@@ -184,108 +190,51 @@ const toggleMenu = (label: string) => {
     }
 }
 
-const links = [
-  {
-    label: 'Dashboard',
-    icon: 'i-heroicons-home',
-    to: '/'
-  },
-  {
-    label: 'Initial Setup',
-    icon: 'i-heroicons-cog-6-tooth',
-    to: '/setup'
-  },
-  {
-    label: 'Manufacturing',
-    icon: 'i-heroicons-wrench-screwdriver',
-    children: [
-        { label: 'Work Centers', to: '/manufacturing/work-centers' },
-        { label: 'Products & BOM', to: '/manufacturing/products' },
-        { label: 'Production', to: '/manufacturing/production' }
-    ]
-  },
-   {
-    label: 'Inventory',
-    icon: 'i-heroicons-cube',
-    children: [
-        { label: 'Stock Status', to: '/inventory/stock' },
-        { label: 'Warehouses', to: '/inventory/warehouses' },
-        { label: 'Movements', to: '/inventory/movements' },
-        { label: 'Goods Receipt', to: '/inventory/receiving' }, 
-        { label: 'Opname', to: '/inventory/opname' } 
-    ]
-  },
-  {
-    label: 'Procurement',
-    icon: 'i-heroicons-shopping-cart',
-    children: [
-        { label: 'Purchase Requests', to: '/procurement/requests' },
-        { label: 'Purchase Orders', to: '/procurement/orders' },
-        { label: 'Vendors', to: '/procurement/vendors' }
-    ]
-  },
-  {
-      label: 'Quality Control',
-      icon: 'i-heroicons-beaker',
-      to: '/qc/inspections'
-  },
-   {
-      label: 'Logistics',
-      icon: 'i-heroicons-truck',
-      to: '/logistics/delivery'
-  },
-  {
-    label: 'Finance',
-    icon: 'i-heroicons-banknotes',
-    children: [
-        { label: 'Chart of Accounts', to: '/finance/coa' },
-        { label: 'General Ledger', to: '/finance/gl' },
-        { label: 'Reports', to: '/finance/reports' },
-        { label: 'Fixed Assets', to: '/finance/assets' }
-    ]
-  },
-  {
-      label: 'HR & Payroll',
-      icon: 'i-heroicons-user-group',
-      children: [
-          { label: 'Employees', to: '/hr/employees' },
-          { label: 'Payroll Run', to: '/hr/payroll' }
-      ]
-  },
-  {
-      label: 'CRM & Sales',
-      icon: 'i-heroicons-briefcase',
-      children: [
-          { label: 'Sales Orders', to: '/crm/orders' }
-      ]
-  },
-  {
-      label: 'Projects (PMO)',
-      icon: 'i-heroicons-clipboard-document-list',
-      children: [
-          { label: 'All Projects', to: '/projects' }
-      ]
-  },
-  {
-      label: 'Maintenance',
-      icon: 'i-heroicons-cog-8-tooth',
-      children: [
-          { label: 'Work Orders', to: '/maintenance' }
-      ]
-  },
-  {
-      label: 'B2B Portal',
-      icon: 'i-heroicons-globe-alt',
-      children: [
-          { label: 'Browse Catalog', to: '/portal/shop' }
-      ]
-  },
-  {
-      label: 'Compliance',
-      icon: 'i-heroicons-shield-check',
-      to: '/compliance'
-  }
+// Menu state - fetched from API
+const links = ref<any[]>([])
+const menuLoading = ref(true)
+
+// Fallback menus while loading
+const fallbackLinks = [
+  { label: 'Dashboard', icon: 'i-heroicons-home', to: '/' }
 ]
+
+// Fetch menus from API
+const fetchMenus = async () => {
+  menuLoading.value = true
+  try {
+    // Use token from auth store (which was initialized from cookie)
+    const token = authStore.token
+    if (!token) {
+      links.value = fallbackLinks
+      return
+    }
+    const response = await $fetch<any[]>('/api/menus', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+    links.value = response
+  } catch (e: any) {
+    console.error('Failed to fetch menus:', e)
+    // If 401 (token expired), logout and redirect to login
+    if (e?.response?.status === 401 || e?.statusCode === 401) {
+      authStore.logout()
+      return
+    }
+    // Use fallback on error
+    links.value = fallbackLinks
+  } finally {
+    menuLoading.value = false
+  }
+}
+
+// Fetch menus on mount and when auth changes
+watch(() => authStore.isAuthenticated, (isAuth) => {
+  if (isAuth) {
+    fetchMenus()
+  }
+}, { immediate: true })
 
 const logout = () => {
     authStore.logout()

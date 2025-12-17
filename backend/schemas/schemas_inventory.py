@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import uuid
 
 class LocationBase(BaseModel):
@@ -25,6 +25,7 @@ class WarehouseCreate(WarehouseBase):
 
 class WarehouseResponse(WarehouseBase):
     id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
     locations: List[LocationResponse] = []
     class Config:
         from_attributes = True

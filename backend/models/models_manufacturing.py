@@ -19,8 +19,11 @@ class WorkCenter(Base):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     code = Column(String, index=True, nullable=False)
     name = Column(String, nullable=False)
-    hourly_rate = Column(Float, default=0.0)
-    capacity_per_hour = Column(Float, default=0.0)
+    cost_per_hour = Column(Float, default=0.0)
+    capacity_hours = Column(Float, default=8.0)
+    location = Column(String, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
 
 
 class Product(Base):

@@ -28,13 +28,20 @@ def generate_otp() -> str:
 
 def get_otp_expiry() -> datetime:
     """Get OTP expiry datetime (10 minutes from now)"""
-    return datetime.utcnow() + timedelta(minutes=OTP_EXPIRY_MINUTES)
+    from datetime import timezone
+    return datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRY_MINUTES)
 
 def is_otp_valid(otp_expires_at: Optional[datetime]) -> bool:
     """Check if OTP is still valid (not expired)"""
+    from datetime import timezone
     if not otp_expires_at:
         return False
-    return datetime.utcnow() < otp_expires_at
+    # Handle both naive and aware datetimes
+    now = datetime.now(timezone.utc)
+    if otp_expires_at.tzinfo is None:
+        # If naive, assume UTC
+        otp_expires_at = otp_expires_at.replace(tzinfo=timezone.utc)
+    return now < otp_expires_at
 
 async def send_otp_email(to_email: str, otp_code: str, username: str) -> bool:
     """Send OTP verification email"""

@@ -15,25 +15,33 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def seed_users(db):
     logger.info("Seeding Users...")
-    result = await db.execute(select(models.User).where(models.User.email == "admin@minierp.com"))
-    if not result.scalar_one_or_none():
-        admin = models.User(
-            username="admin",
-            email="admin@minierp.com",
-            password_hash=pwd_context.hash("admin123"),
-            role=models.UserRole.ADMIN
-        )
-        db.add(admin)
-        
-    result = await db.execute(select(models.User).where(models.User.email == "operator@minierp.com"))
-    if not result.scalar_one_or_none():
-        operator = models.User(
-            username="operator",
-            email="operator@minierp.com",
-            password_hash=pwd_context.hash("operator123"),
-            role=models.UserRole.OPERATOR
-        )
-        db.add(operator)
+    
+    # Define all default users with their roles
+    default_users = [
+        {"username": "admin", "email": "admin@minierp.com", "role": models.UserRole.ADMIN},
+        {"username": "manager", "email": "manager@minierp.com", "role": models.UserRole.MANAGER},
+        {"username": "production", "email": "production@minierp.com", "role": models.UserRole.PRODUCTION},
+        {"username": "warehouse", "email": "warehouse@minierp.com", "role": models.UserRole.WAREHOUSE},
+        {"username": "staff", "email": "staff@minierp.com", "role": models.UserRole.STAFF},
+        {"username": "procurement", "email": "procurement@minierp.com", "role": models.UserRole.PROCUREMENT},
+        {"username": "finance", "email": "finance@minierp.com", "role": models.UserRole.FINANCE},
+        {"username": "hr", "email": "hr@minierp.com", "role": models.UserRole.HR},
+        {"username": "lab_tech", "email": "labtech@minierp.com", "role": models.UserRole.LAB_TECH},
+    ]
+    
+    for user_data in default_users:
+        result = await db.execute(select(models.User).where(models.User.email == user_data["email"]))
+        if not result.scalar_one_or_none():
+            user = models.User(
+                username=user_data["username"],
+                email=user_data["email"],
+                password_hash=pwd_context.hash(f"{user_data['username']}123"),  # password = username + 123
+                role=user_data["role"],
+                is_verified=True  # Auto-verify seed users
+            )
+            db.add(user)
+            logger.info(f"Created user: {user_data['username']} ({user_data['role'].value})")
+    
     await db.commit()
 
 async def seed_manufacturing(db):
@@ -42,7 +50,7 @@ async def seed_manufacturing(db):
     wc_res = await db.execute(select(models.WorkCenter).where(models.WorkCenter.name == "Assembly Line 1"))
     wc = wc_res.scalar_one_or_none()
     if not wc:
-        wc = models.WorkCenter(name="Assembly Line 1", location="Factory Floor A", capacity_per_hour=100)
+        wc = models.WorkCenter(code="WC-001", name="Assembly Line 1", capacity_per_hour=100, hourly_rate=25.0)
         db.add(wc)
         await db.commit()
     
@@ -156,12 +164,94 @@ async def seed_customers(db):
         db.add(cust)
         await db.commit()
 
+async def seed_menus(db):
+    """Seed default menu items"""
+    logger.info("Seeding Menus...")
+    
+    # Check if menus already exist
+    result = await db.execute(select(models.Menu).limit(1))
+    if result.scalar_one_or_none():
+        logger.info("Menus already seeded, skipping...")
+        return
+    
+    # Define all menus with parent-child relationships
+    menus_data = [
+        # Main menus (no parent)
+        {"code": "dashboard", "label": "Dashboard", "icon": "i-heroicons-home", "path": "/", "sort_order": 1},
+        {"code": "manufacturing", "label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "path": None, "sort_order": 2},
+        {"code": "inventory", "label": "Inventory", "icon": "i-heroicons-cube", "path": None, "sort_order": 3},
+        {"code": "procurement", "label": "Procurement", "icon": "i-heroicons-shopping-cart", "path": None, "sort_order": 4},
+        {"code": "qc", "label": "Quality Control", "icon": "i-heroicons-beaker", "path": "/qc/inspections", "sort_order": 5},
+        {"code": "logistics", "label": "Logistics", "icon": "i-heroicons-truck", "path": "/logistics/delivery", "sort_order": 6},
+        {"code": "finance", "label": "Finance", "icon": "i-heroicons-banknotes", "path": None, "sort_order": 7},
+        {"code": "hr", "label": "HR & Payroll", "icon": "i-heroicons-user-group", "path": None, "sort_order": 8},
+        {"code": "crm", "label": "CRM & Sales", "icon": "i-heroicons-briefcase", "path": None, "sort_order": 9},
+        {"code": "projects", "label": "Projects", "icon": "i-heroicons-clipboard-document-list", "path": None, "sort_order": 10},
+        {"code": "maintenance", "label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "path": None, "sort_order": 11},
+        {"code": "portal", "label": "B2B Portal", "icon": "i-heroicons-globe-alt", "path": None, "sort_order": 12},
+        {"code": "compliance", "label": "Compliance", "icon": "i-heroicons-shield-check", "path": "/compliance", "sort_order": 13},
+        {"code": "config", "label": "Config", "icon": "i-heroicons-cog-6-tooth", "path": "/setup", "sort_order": 99},
+    ]
+    
+    # Create parent menus first
+    menu_map = {}
+    for menu_data in menus_data:
+        menu = models.Menu(**menu_data)
+        db.add(menu)
+        await db.flush()
+        menu_map[menu_data["code"]] = menu.id
+    
+    # Define child menus
+    children_data = [
+        # Manufacturing children
+        {"code": "manufacturing.work-centers", "label": "Work Centers", "path": "/manufacturing/work-centers", "parent_code": "manufacturing", "sort_order": 1},
+        {"code": "manufacturing.products", "label": "Products & BOM", "path": "/manufacturing/products", "parent_code": "manufacturing", "sort_order": 2},
+        {"code": "manufacturing.production", "label": "Production", "path": "/manufacturing/production", "parent_code": "manufacturing", "sort_order": 3},
+        # Inventory children
+        {"code": "inventory.stock", "label": "Stock Status", "path": "/inventory/stock", "parent_code": "inventory", "sort_order": 1},
+        {"code": "inventory.warehouses", "label": "Warehouses", "path": "/inventory/warehouses", "parent_code": "inventory", "sort_order": 2},
+        {"code": "inventory.movements", "label": "Movements", "path": "/inventory/movements", "parent_code": "inventory", "sort_order": 3},
+        {"code": "inventory.receiving", "label": "Goods Receipt", "path": "/inventory/receiving", "parent_code": "inventory", "sort_order": 4},
+        {"code": "inventory.opname", "label": "Opname", "path": "/inventory/opname", "parent_code": "inventory", "sort_order": 5},
+        # Procurement children
+        {"code": "procurement.requests", "label": "Purchase Requests", "path": "/procurement/requests", "parent_code": "procurement", "sort_order": 1},
+        {"code": "procurement.orders", "label": "Purchase Orders", "path": "/procurement/orders", "parent_code": "procurement", "sort_order": 2},
+        {"code": "procurement.vendors", "label": "Vendors", "path": "/procurement/vendors", "parent_code": "procurement", "sort_order": 3},
+        # Finance children
+        {"code": "finance.coa", "label": "Chart of Accounts", "path": "/finance/coa", "parent_code": "finance", "sort_order": 1},
+        {"code": "finance.gl", "label": "General Ledger", "path": "/finance/gl", "parent_code": "finance", "sort_order": 2},
+        {"code": "finance.reports", "label": "Reports", "path": "/finance/reports", "parent_code": "finance", "sort_order": 3},
+        {"code": "finance.assets", "label": "Fixed Assets", "path": "/finance/assets", "parent_code": "finance", "sort_order": 4},
+        # HR children
+        {"code": "hr.employees", "label": "Employees", "path": "/hr/employees", "parent_code": "hr", "sort_order": 1},
+        {"code": "hr.payroll", "label": "Payroll Run", "path": "/hr/payroll", "parent_code": "hr", "sort_order": 2},
+        # CRM children
+        {"code": "crm.orders", "label": "Sales Orders", "path": "/crm/orders", "parent_code": "crm", "sort_order": 1},
+        # Projects children
+        {"code": "projects.all", "label": "All Projects", "path": "/projects", "parent_code": "projects", "sort_order": 1},
+        # Maintenance children
+        {"code": "maintenance.work-orders", "label": "Work Orders", "path": "/maintenance", "parent_code": "maintenance", "sort_order": 1},
+        # Portal children
+        {"code": "portal.shop", "label": "Browse Catalog", "path": "/portal/shop", "parent_code": "portal", "sort_order": 1},
+    ]
+    
+    for child_data in children_data:
+        parent_code = child_data.pop("parent_code")
+        child_data["parent_id"] = menu_map.get(parent_code)
+        child_menu = models.Menu(**child_data)
+        db.add(child_menu)
+    
+    await db.commit()
+    logger.info(f"Created {len(menus_data) + len(children_data)} menu items")
+
+
 async def main():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     async with SessionLocal() as db:
         await seed_users(db)
+        await seed_menus(db)
         await seed_manufacturing(db)
         await seed_inventory(db)
         await seed_procurement(db)

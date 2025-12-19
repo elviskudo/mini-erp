@@ -5,19 +5,19 @@
       <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchStock">Refresh</UButton>
     </div>
 
-    <UCard>
+    <UCard :ui="{ body: { padding: 'p-4' } }">
       <!-- Need an endpoint to get all batches or aggregated stock. 
            Task 2.5 has /issuance/available_batches/{product_id}, but we want ALL.
            I'll assume I need to add a general stock list endpoint to Inventory Router.
            GET /inventory/stock
       -->
-      <UTable :columns="columns" :rows="stockItems" :loading="loading">
+      <DataTable :columns="columns" :rows="stockItems" :loading="loading" search-placeholder="Search stock...">
          <template #expiry-data="{ row }">
             <span :class="{'text-red-500 font-bold': isExpired(row.expiration_date)}">
                 {{ row.expiration_date ? new Date(row.expiration_date).toLocaleDateString() : 'N/A' }}
             </span>
         </template>
-      </UTable>
+      </DataTable>
     </UCard>
   </div>
 </template>

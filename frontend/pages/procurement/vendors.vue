@@ -8,12 +8,18 @@
       <UButton icon="i-heroicons-plus" @click="openCreate">Add Vendor</UButton>
     </div>
 
-    <UCard :ui="{ body: { padding: '' } }">
-      <UTable :columns="columns" :rows="vendors" :loading="loading">
+    <UCard :ui="{ body: { padding: 'p-4' } }">
+      <DataTable :columns="columns" :rows="vendors" :loading="loading" search-placeholder="Search vendors...">
+        <template #rating-data="{ row }">
+          <UBadge :color="getRatingColor(row.rating)" variant="soft">{{ row.rating || 'B' }}</UBadge>
+        </template>
+        <template #category-data="{ row }">
+          <span class="text-sm">{{ row.category || 'Raw Material' }}</span>
+        </template>
         <template #actions-data="{ row }">
           <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="openEdit(row)" />
         </template>
-      </UTable>
+      </DataTable>
     </UCard>
 
     <!-- Form Slideover -->
@@ -24,21 +30,32 @@
       @submit="saveVendor"
     >
       <div class="space-y-4">
-        <UFormGroup label="Name" required>
-          <UInput v-model="form.name" placeholder="Vendor Name" />
-        </UFormGroup>
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Code" required>
+            <UInput v-model="form.code" placeholder="V-001" />
+          </UFormGroup>
+          <UFormGroup label="Name" required>
+            <UInput v-model="form.name" placeholder="Vendor Name" />
+          </UFormGroup>
+        </div>
         
-        <UFormGroup label="Code" required>
-          <UInput v-model="form.code" placeholder="V-001" />
-        </UFormGroup>
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Rating">
+            <USelect v-model="form.rating" :options="ratingOptions" />
+          </UFormGroup>
+          <UFormGroup label="Category">
+            <USelect v-model="form.category" :options="categoryOptions" />
+          </UFormGroup>
+        </div>
 
-        <UFormGroup label="Email">
-          <UInput v-model="form.email" type="email" placeholder="contact@vendor.com" />
-        </UFormGroup>
-        
-        <UFormGroup label="Phone">
-          <UInput v-model="form.phone" placeholder="+62..." />
-        </UFormGroup>
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Email">
+            <UInput v-model="form.email" type="email" placeholder="contact@vendor.com" />
+          </UFormGroup>
+          <UFormGroup label="Phone">
+            <UInput v-model="form.phone" placeholder="+62..." />
+          </UFormGroup>
+        </div>
         
         <UFormGroup label="Address">
           <UTextarea v-model="form.address" rows="3" placeholder="Vendor address" />
@@ -63,9 +80,23 @@ const vendors = ref<any[]>([])
 const columns = [
   { key: 'code', label: 'Code' },
   { key: 'name', label: 'Name' },
+  { key: 'rating', label: 'Rating' },
+  { key: 'category', label: 'Category' },
   { key: 'email', label: 'Email' },
   { key: 'phone', label: 'Phone' },
   { key: 'actions', label: '' }
+]
+
+const ratingOptions = [
+  { label: 'A - Excellent', value: 'A' },
+  { label: 'B - Good', value: 'B' },
+  { label: 'C - Fair', value: 'C' }
+]
+
+const categoryOptions = [
+  { label: 'Raw Material', value: 'Raw Material' },
+  { label: 'Finished Goods', value: 'Finished Goods' },
+  { label: 'Both', value: 'Both' }
 ]
 
 const form = reactive({
@@ -74,7 +105,9 @@ const form = reactive({
     code: '',
     email: '',
     phone: '',
-    address: ''
+    address: '',
+    rating: 'B',
+    category: 'Raw Material'
 })
 
 const resetForm = () => {
@@ -84,8 +117,19 @@ const resetForm = () => {
         code: '',
         email: '',
         phone: '',
-        address: ''
+        address: '',
+        rating: 'B',
+        category: 'Raw Material'
     })
+}
+
+const getRatingColor = (rating: string) => {
+    switch (rating) {
+        case 'A': return 'green'
+        case 'B': return 'yellow'
+        case 'C': return 'red'
+        default: return 'gray'
+    }
 }
 
 const fetchVendors = async () => {
@@ -120,13 +164,13 @@ const saveVendor = async () => {
                 method: 'PUT',
                 body: form
             })
-            toast.add({ title: 'Updated', description: 'Vendor updated.' })
+            toast.add({ title: 'Updated', description: 'Vendor updated.', color: 'green' })
         } else {
             await $fetch('/api/procurement/vendors', {
                 method: 'POST', 
                 body: form
             })
-            toast.add({ title: 'Created', description: 'Vendor created.' })
+            toast.add({ title: 'Created', description: 'Vendor created.', color: 'green' })
         }
         isOpen.value = false
         fetchVendors()

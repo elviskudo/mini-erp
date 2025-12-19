@@ -8,6 +8,7 @@ export default defineNuxtConfig({
     },
     vite: {
         server: {
+            allowedHosts: ['frontend-web.mini-erp.orb.local', 'localhost', '.orb.local'],
             hmr: {
                 protocol: 'ws',
                 host: 'localhost',

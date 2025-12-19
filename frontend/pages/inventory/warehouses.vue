@@ -8,15 +8,15 @@
       <UButton icon="i-heroicons-plus" color="primary" @click="openCreateModal">Add Warehouse</UButton>
     </div>
 
-    <UCard :ui="{ body: { padding: '' } }">
-      <UTable :columns="columns" :rows="warehouses" :loading="loading">
+    <UCard :ui="{ body: { padding: 'p-4' } }">
+      <DataTable :columns="columns" :rows="warehouses" :loading="loading" search-placeholder="Search warehouses...">
          <template #actions-data="{ row }">
             <div class="flex gap-1">
               <UButton icon="i-heroicons-map-pin" color="gray" variant="ghost" size="xs" @click="viewLocations(row)" />
               <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="editWarehouse(row)" />
             </div>
          </template>
-      </UTable>
+      </DataTable>
     </UCard>
 
     <!-- Create/Edit Warehouse Slideover -->

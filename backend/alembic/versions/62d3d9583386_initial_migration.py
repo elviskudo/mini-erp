@@ -89,6 +89,23 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_tenant_members_tenant_id ON tenant_members(tenant_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_tenant_members_user_id ON tenant_members(user_id)")
     
+    # Create work_centers table (for manufacturing work centers)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS work_centers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            cost_per_hour FLOAT DEFAULT 0.0,
+            capacity_hours FLOAT DEFAULT 8.0,
+            location VARCHAR,
+            latitude FLOAT,
+            longitude FLOAT
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_work_centers_tenant_id ON work_centers(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_work_centers_code ON work_centers(code)")
+    
     # Create menus table (for database-driven menu system)
     op.execute("""
         CREATE TABLE IF NOT EXISTS menus (
@@ -122,6 +139,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS role_menu_permissions")
     op.execute("DROP TABLE IF EXISTS menus")
+    op.execute("DROP TABLE IF EXISTS work_centers")
     op.execute("DROP TABLE IF EXISTS tenant_members")
     op.execute("DROP TABLE IF EXISTS users")
     op.execute("DROP TABLE IF EXISTS tenants")

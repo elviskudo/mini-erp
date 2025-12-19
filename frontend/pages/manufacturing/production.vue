@@ -5,7 +5,7 @@
         <h1 class="text-2xl font-bold text-gray-900">Production Orders</h1>
         <p class="text-gray-500">Manage manufacturing production orders</p>
       </div>
-      <UButton icon="i-heroicons-plus" @click="showModal = true">
+      <UButton icon="i-heroicons-plus" @click="openCreate">
         New Production Order
       </UButton>
     </div>
@@ -38,17 +38,14 @@
       </UCard>
     </div>
 
-    <!-- Filters -->
-    <UCard>
-      <div class="flex flex-col sm:flex-row gap-4">
-        <UInput v-model="search" placeholder="Search orders..." icon="i-heroicons-magnifying-glass" class="flex-1" />
-        <USelect v-model="statusFilter" :options="statusOptions" placeholder="All Status" class="w-full sm:w-40" />
-      </div>
-    </UCard>
-
     <!-- Data Table -->
-    <UCard :ui="{ body: { padding: '' } }">
-      <UTable :columns="columns" :rows="filteredOrders" :loading="loading">
+    <UCard :ui="{ body: { padding: 'p-4' } }">
+      <DataTable 
+        :columns="columns" 
+        :rows="orders" 
+        :loading="loading"
+        search-placeholder="Search orders..."
+      >
         <template #status-data="{ row }">
           <UBadge :color="getStatusColor(row.status)" variant="subtle">
             {{ row.status }}
@@ -68,92 +65,414 @@
           </div>
         </template>
         <template #actions-data="{ row }">
-          <UDropdown :items="getActions(row)">
-            <UButton icon="i-heroicons-ellipsis-vertical" color="gray" variant="ghost" />
-          </UDropdown>
+          <div class="flex gap-1">
+            <UButton icon="i-heroicons-eye" color="gray" variant="ghost" size="xs" @click="viewOrder(row)" />
+            <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="editOrder(row)" />
+          </div>
         </template>
-      </UTable>
-      
-      <!-- Pagination -->
-      <div class="flex items-center justify-between px-4 py-3 border-t">
-        <p class="text-sm text-gray-500">Showing {{ filteredOrders.length }} of {{ orders.length }} orders</p>
-        <UPagination v-model="page" :total="orders.length" :page-count="10" />
-      </div>
+      </DataTable>
     </UCard>
 
-    <!-- Create Slideover -->
-    <USlideover v-model="showModal">
-      <div class="p-6 flex flex-col h-full">
-        <div class="flex items-center justify-between mb-6">
-          <h3 class="text-lg font-semibold">New Production Order</h3>
-          <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="showModal = false" />
-        </div>
-        
-        <div class="flex-1 space-y-4 overflow-y-auto">
-          <UFormGroup label="Product" required>
-            <USelect v-model="form.productId" :options="products" placeholder="Select product" />
-          </UFormGroup>
-          
-          <div class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Quantity" required>
-              <UInput v-model="form.quantity" type="number" min="1" />
-            </UFormGroup>
-            <UFormGroup label="Work Center">
-              <USelect v-model="form.workCenterId" :options="workCenters" placeholder="Select" />
-            </UFormGroup>
+    <!-- Create/Edit Form Slideover -->
+    <FormSlideover 
+      v-model="showModal" 
+      :title="editMode ? 'Edit Production Order' : 'New Production Order'"
+      :loading="submitting"
+      @submit="saveOrder"
+    >
+      <div class="space-y-4">
+        <!-- Products Multi-Select Autocomplete -->
+        <UFormGroup label="Products" required>
+          <USelectMenu
+            v-model="selectedProducts"
+            :options="productOptions"
+            multiple
+            searchable
+            searchable-placeholder="Search products..."
+            placeholder="Select products..."
+            :ui-menu="{ option: { base: 'cursor-pointer' } }"
+          >
+            <template #label>
+              <span v-if="selectedProducts.length === 0" class="text-gray-400">Select products...</span>
+              <span v-else>{{ selectedProducts.length }} product(s) selected</span>
+            </template>
+            <template #option="{ option }">
+              <div class="flex flex-col">
+                <span class="font-medium">{{ option.code }} - {{ option.name }}</span>
+                <span class="text-xs text-gray-500">{{ option.type }} | {{ option.uom }}</span>
+              </div>
+            </template>
+          </USelectMenu>
+          <!-- Selected Products Display -->
+          <div v-if="selectedProducts.length > 0" class="mt-2 flex flex-wrap gap-2">
+            <UBadge 
+              v-for="prod in selectedProducts" 
+              :key="prod.id"
+              color="primary"
+              variant="soft"
+              class="flex items-center gap-1"
+            >
+              {{ prod.code }} - {{ prod.name }}
+              <UButton 
+                icon="i-heroicons-x-mark" 
+                size="2xs" 
+                color="primary" 
+                variant="link"
+                @click="removeProduct(prod)"
+              />
+            </UBadge>
           </div>
-          
+        </UFormGroup>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Quantity" required>
+            <UInput v-model="form.quantity" type="number" min="1" />
+          </UFormGroup>
           <UFormGroup label="Scheduled Date">
             <UInput v-model="form.scheduledDate" type="date" />
           </UFormGroup>
-          
-          <UFormGroup label="Notes">
-            <UTextarea v-model="form.notes" rows="3" placeholder="Additional notes..." />
+        </div>
+
+        <!-- Work Centers Multi-Select Autocomplete -->
+        <UFormGroup label="Work Centers">
+          <USelectMenu
+            v-model="selectedWorkCenters"
+            :options="workCenterOptions"
+            multiple
+            searchable
+            searchable-placeholder="Search work centers..."
+            placeholder="Select work centers..."
+          >
+            <template #label>
+              <span v-if="selectedWorkCenters.length === 0" class="text-gray-400">Select work centers...</span>
+              <span v-else>{{ selectedWorkCenters.length }} work center(s) selected</span>
+            </template>
+            <template #option="{ option }">
+              <div class="flex flex-col">
+                <span class="font-medium">{{ option.code }} - {{ option.name }}</span>
+              </div>
+            </template>
+          </USelectMenu>
+          <!-- Selected Work Centers Display -->
+          <div v-if="selectedWorkCenters.length > 0" class="mt-2 flex flex-wrap gap-2">
+            <UBadge 
+              v-for="wc in selectedWorkCenters" 
+              :key="wc.id"
+              color="gray"
+              variant="soft"
+              class="flex items-center gap-1"
+            >
+              {{ wc.code }} - {{ wc.name }}
+              <UButton 
+                icon="i-heroicons-x-mark" 
+                size="2xs" 
+                color="gray" 
+                variant="link"
+                @click="removeWorkCenter(wc)"
+              />
+            </UBadge>
+          </div>
+        </UFormGroup>
+        
+        <UFormGroup label="Notes">
+          <UTextarea v-model="form.notes" rows="3" placeholder="Additional notes..." />
+        </UFormGroup>
+      </div>
+    </FormSlideover>
+
+    <!-- View Order Modal with HPP and QC -->
+    <UModal v-model="showViewModal" :ui="{ width: 'w-full sm:max-w-3xl' }">
+      <UCard v-if="viewedOrder">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold">{{ viewedOrder.order_no }}</h3>
+              <p class="text-sm text-gray-500">Production Order</p>
+            </div>
+            <UBadge :color="getStatusColor(viewedOrder.status)" variant="soft">{{ viewedOrder.status }}</UBadge>
+          </div>
+        </template>
+
+        <!-- Tabs -->
+        <UTabs :items="viewTabs" class="w-full">
+          <template #item="{ item }">
+            <div v-if="item.key === 'overview'" class="space-y-4 pt-4">
+              <!-- Progress -->
+              <div>
+                <p class="text-sm text-gray-500 mb-1">Progress: {{ viewedOrder.completed_qty || 0 }} / {{ viewedOrder.quantity }}</p>
+                <div class="flex items-center gap-3">
+                  <div class="flex-1 bg-gray-200 rounded-full h-3">
+                    <div class="bg-primary-500 h-3 rounded-full" :style="{ width: `${viewedOrder.progress}%` }"></div>
+                  </div>
+                  <span class="text-sm font-medium">{{ viewedOrder.progress }}%</span>
+                </div>
+              </div>
+
+              <!-- Details Grid -->
+              <div class="grid grid-cols-3 gap-4">
+                <div>
+                  <p class="text-sm text-gray-500">Target Qty</p>
+                  <p class="font-medium">{{ viewedOrder.quantity }}</p>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500">Completed</p>
+                  <p class="font-medium text-green-600">{{ viewedOrder.completed_qty || 0 }}</p>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500">Scheduled</p>
+                  <p class="font-medium">{{ formatDate(viewedOrder.scheduled_date) }}</p>
+                </div>
+              </div>
+
+              <!-- Products & Work Centers -->
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <p class="text-sm text-gray-500 mb-2">Products</p>
+                  <div class="flex flex-wrap gap-1">
+                    <UBadge v-for="p in viewedOrder.products" :key="p.id" color="primary" variant="soft" size="xs">
+                      {{ p.product?.name }}
+                    </UBadge>
+                  </div>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-500 mb-2">Work Centers</p>
+                  <div class="flex flex-wrap gap-1">
+                    <UBadge v-for="wc in viewedOrder.work_centers" :key="wc.id" color="gray" variant="soft" size="xs">
+                      {{ wc.work_center?.name }}
+                    </UBadge>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- HPP / Cost Tab -->
+            <div v-else-if="item.key === 'cost'" class="space-y-4 pt-4">
+              <div class="grid grid-cols-2 gap-4">
+                <div class="p-4 bg-blue-50 rounded-lg">
+                  <p class="text-sm text-blue-600">Material Cost</p>
+                  <p class="text-xl font-bold">Rp {{ formatNumber(viewedOrder.material_cost || 0) }}</p>
+                </div>
+                <div class="p-4 bg-green-50 rounded-lg">
+                  <p class="text-sm text-green-600">Labor Cost</p>
+                  <p class="text-xl font-bold">Rp {{ formatNumber(viewedOrder.labor_cost || 0) }}</p>
+                </div>
+                <div class="p-4 bg-yellow-50 rounded-lg">
+                  <p class="text-sm text-yellow-600">Overhead Cost</p>
+                  <p class="text-xl font-bold">Rp {{ formatNumber(viewedOrder.overhead_cost || 0) }}</p>
+                </div>
+                <div class="p-4 bg-purple-50 rounded-lg">
+                  <p class="text-sm text-purple-600">HPP per Unit</p>
+                  <p class="text-xl font-bold">Rp {{ formatNumber(viewedOrder.hpp_per_unit || 0) }}</p>
+                </div>
+              </div>
+              
+              <div class="p-4 bg-gray-100 rounded-lg">
+                <p class="text-sm text-gray-600">Total HPP (COGM)</p>
+                <p class="text-2xl font-bold text-primary-600">Rp {{ formatNumber(viewedOrder.total_hpp || 0) }}</p>
+              </div>
+
+              <!-- Calculate HPP Button -->
+              <UButton v-if="!viewedOrder.total_hpp" color="primary" block @click="showHppModal = true">
+                Calculate HPP
+              </UButton>
+            </div>
+
+            <!-- QC Results Tab -->
+            <div v-else-if="item.key === 'qc'" class="space-y-4 pt-4">
+              <div class="grid grid-cols-4 gap-3">
+                <div class="text-center p-3 bg-green-50 rounded-lg">
+                  <p class="text-2xl font-bold text-green-600">{{ qcTotals.good }}</p>
+                  <p class="text-xs text-gray-500">Good</p>
+                </div>
+                <div class="text-center p-3 bg-yellow-50 rounded-lg">
+                  <p class="text-2xl font-bold text-yellow-600">{{ qcTotals.defect }}</p>
+                  <p class="text-xs text-gray-500">Defect</p>
+                </div>
+                <div class="text-center p-3 bg-red-50 rounded-lg">
+                  <p class="text-2xl font-bold text-red-600">{{ qcTotals.scrap }}</p>
+                  <p class="text-xs text-gray-500">Scrap</p>
+                </div>
+                <div class="text-center p-3 bg-gray-100 rounded-lg">
+                  <p class="text-2xl font-bold">{{ qcTotals.defect_rate }}%</p>
+                  <p class="text-xs text-gray-500">Defect Rate</p>
+                </div>
+              </div>
+
+              <UButton color="primary" block @click="showQcModal = true">
+                Record QC Result
+              </UButton>
+            </div>
+          </template>
+        </UTabs>
+
+        <template #footer>
+          <div class="flex justify-between">
+            <div class="flex gap-2">
+              <UButton v-if="viewedOrder.status === 'Draft'" color="yellow" @click="startProduction">
+                Start Production
+              </UButton>
+              <UButton v-if="viewedOrder.status === 'In Progress'" color="green" @click="showQcModal = true">
+                Record Progress
+              </UButton>
+            </div>
+            <UButton color="gray" variant="ghost" @click="showViewModal = false">Close</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- HPP Calculator Modal -->
+    <UModal v-model="showHppModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Calculate HPP</h3>
+        </template>
+        <div class="space-y-4">
+          <UFormGroup label="Labor Hours" hint="Total work hours" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="hppForm.labor_hours" type="number" step="0.5" placeholder="e.g. 8" />
+          </UFormGroup>
+          <UFormGroup label="Hourly Rate" hint="Cost per labor hour" :ui="{ hint: 'text-xs text-gray-400' }">
+            <CurrencyInput v-model="hppForm.hourly_rate" :currency="currencyCode" />
+          </UFormGroup>
+          <UFormGroup label="Overhead Rate (%)" hint="Factory overhead %" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="hppForm.overhead_rate" type="number" step="1" placeholder="15" />
           </UFormGroup>
         </div>
-        
-        <div class="flex justify-end gap-3 pt-6 border-t mt-6">
-          <UButton variant="ghost" @click="showModal = false">Cancel</UButton>
-          <UButton @click="createOrder">Create Order</UButton>
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <UButton variant="ghost" @click="showHppModal = false">Cancel</UButton>
+            <UButton :loading="submitting" @click="calculateHpp">Calculate</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- QC Recording Modal -->
+    <UModal v-model="showQcModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Record QC Result</h3>
+        </template>
+        <div class="space-y-4">
+          <div class="grid grid-cols-3 gap-4">
+            <UFormGroup label="Good Qty" hint="Units passed QC" :ui="{ hint: 'text-xs text-gray-400' }">
+              <UInput v-model="qcForm.good_qty" type="number" min="0" />
+            </UFormGroup>
+            <UFormGroup label="Defect Qty" hint="Needs rework" :ui="{ hint: 'text-xs text-gray-400' }">
+              <UInput v-model="qcForm.defect_qty" type="number" min="0" />
+            </UFormGroup>
+            <UFormGroup label="Scrap Qty" hint="Unsalvageable" :ui="{ hint: 'text-xs text-gray-400' }">
+              <UInput v-model="qcForm.scrap_qty" type="number" min="0" />
+            </UFormGroup>
+          </div>
+          
+          <UFormGroup v-if="qcForm.scrap_qty > 0" label="Scrap Type" hint="Classification" :ui="{ hint: 'text-xs text-gray-400' }">
+            <USelect v-model="qcForm.scrap_type" :options="scrapTypeOptions" />
+          </UFormGroup>
+          
+          <UFormGroup v-if="qcForm.scrap_qty > 0" label="Scrap Reason" hint="Root cause" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="qcForm.scrap_reason" placeholder="e.g. Oven temperature unstable" />
+          </UFormGroup>
+          
+          <UFormGroup v-if="qcForm.scrap_type === 'Total Loss'" label="Spoilage Expense" hint="Loss amount" :ui="{ hint: 'text-xs text-gray-400' }">
+            <CurrencyInput v-model="qcForm.spoilage_expense" :currency="currencyCode" />
+          </UFormGroup>
+          
+          <UFormGroup label="Notes" hint="Additional info" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UTextarea v-model="qcForm.notes" rows="2" />
+          </UFormGroup>
         </div>
-      </div>
-    </USlideover>
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <UButton variant="ghost" @click="showQcModal = false">Cancel</UButton>
+            <UButton :loading="submitting" @click="recordQc">Save QC Result</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
 definePageMeta({
   middleware: 'auth'
 })
 
+const authStore = useAuthStore()
+const { currencyCode, formatCurrency } = useCurrency()
+const toast = useToast()
 const loading = ref(false)
 const showModal = ref(false)
-const search = ref('')
-const statusFilter = ref('')
-const page = ref(1)
+const submitting = ref(false)
+const editMode = ref(false)
+
+// Data
+const orders = ref<any[]>([])
+const products = ref<any[]>([])
+const workCenters = ref<any[]>([])
+
+// Selected items for multi-select
+const selectedProducts = ref<any[]>([])
+const selectedWorkCenters = ref<any[]>([])
 
 const form = reactive({
-  productId: '',
+  id: '',
   quantity: 1,
-  workCenterId: '',
   scheduledDate: '',
   notes: ''
 })
 
-const stats = reactive({
-  draft: 2,
-  inProgress: 5,
-  completed: 12,
-  cancelled: 1
+// View modal state
+const showViewModal = ref(false)
+const viewedOrder = ref<any>(null)
+
+// HPP Modal state
+const showHppModal = ref(false)
+const hppForm = reactive({
+  labor_hours: 0,
+  hourly_rate: 25000,
+  overhead_rate: 15
 })
 
-const statusOptions = [
-  { label: 'All Status', value: '' },
-  { label: 'Draft', value: 'Draft' },
-  { label: 'In Progress', value: 'In Progress' },
-  { label: 'Completed', value: 'Completed' },
-  { label: 'Cancelled', value: 'Cancelled' }
+// QC Modal state
+const showQcModal = ref(false)
+const qcForm = reactive({
+  good_qty: 0,
+  defect_qty: 0,
+  scrap_qty: 0,
+  scrap_type: '',
+  scrap_reason: '',
+  spoilage_expense: 0,
+  notes: ''
+})
+
+const qcTotals = ref({
+  good: 0,
+  defect: 0,
+  scrap: 0,
+  defect_rate: 0
+})
+
+const scrapTypeOptions = [
+  { label: 'Total Loss (Disposed)', value: 'Total Loss' },
+  { label: 'Grade B (Sell at lower price)', value: 'Grade B' },
+  { label: 'Rework (Reprocess)', value: 'Rework' }
 ]
+
+const viewTabs = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'cost', label: 'HPP/Cost' },
+  { key: 'qc', label: 'QC Results' }
+]
+
+const stats = reactive({
+  draft: 0,
+  inProgress: 0,
+  completed: 0,
+  cancelled: 0
+})
 
 const columns = [
   { key: 'orderNo', label: 'Order No' },
@@ -165,35 +484,31 @@ const columns = [
   { key: 'actions', label: '' }
 ]
 
-const orders = ref([
-  { id: 1, orderNo: 'PO-001', product: 'Widget A', quantity: 100, status: 'In Progress', progress: 45, scheduledDate: '2024-01-15' },
-  { id: 2, orderNo: 'PO-002', product: 'Widget B', quantity: 50, status: 'Draft', progress: 0, scheduledDate: '2024-01-20' },
-  { id: 3, orderNo: 'PO-003', product: 'Component X', quantity: 200, status: 'Completed', progress: 100, scheduledDate: '2024-01-10' },
-  { id: 4, orderNo: 'PO-004', product: 'Widget A', quantity: 75, status: 'In Progress', progress: 80, scheduledDate: '2024-01-18' },
-  { id: 5, orderNo: 'PO-005', product: 'Assembly Y', quantity: 25, status: 'Cancelled', progress: 0, scheduledDate: '2024-01-12' }
-])
-
-const products = [
-  { label: 'Widget A', value: '1' },
-  { label: 'Widget B', value: '2' },
-  { label: 'Component X', value: '3' }
-]
-
-const workCenters = [
-  { label: 'Assembly Line 1', value: '1' },
-  { label: 'Assembly Line 2', value: '2' },
-  { label: 'CNC Machine', value: '3' }
-]
-
-const filteredOrders = computed(() => {
-  return orders.value.filter(order => {
-    const matchSearch = !search.value || 
-      order.orderNo.toLowerCase().includes(search.value.toLowerCase()) ||
-      order.product.toLowerCase().includes(search.value.toLowerCase())
-    const matchStatus = !statusFilter.value || order.status === statusFilter.value
-    return matchSearch && matchStatus
-  })
+// Computed options for autocomplete
+const productOptions = computed(() => {
+  return products.value.map(p => ({
+    ...p,
+    label: `${p.code} - ${p.name} (${p.type}, ${p.uom})`
+  }))
 })
+
+const workCenterOptions = computed(() => {
+  return workCenters.value.map(wc => ({
+    ...wc,
+    label: `${wc.code} - ${wc.name}`
+  }))
+})
+
+const resetForm = () => {
+  Object.assign(form, {
+    id: '',
+    quantity: 1,
+    scheduledDate: '',
+    notes: ''
+  })
+  selectedProducts.value = []
+  selectedWorkCenters.value = []
+}
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -205,16 +520,267 @@ const getStatusColor = (status: string) => {
   }
 }
 
-const getActions = (row: any) => [[
-  { label: 'View Details', icon: 'i-heroicons-eye', click: () => {} },
-  { label: 'Edit', icon: 'i-heroicons-pencil', click: () => {} },
-  { label: 'Start Production', icon: 'i-heroicons-play', click: () => {} }
-], [
-  { label: 'Cancel', icon: 'i-heroicons-x-mark', click: () => {} }
-]]
-
-const createOrder = () => {
-  showModal.value = false
-  // TODO: API call
+// Fetch data
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    
+    // Fetch products
+    const productsRes: any = await $fetch('/api/manufacturing/products', { headers })
+    products.value = productsRes
+    
+    // Fetch work centers
+    const wcRes: any = await $fetch('/api/manufacturing/work-centers', { headers })
+    workCenters.value = wcRes
+    
+    // Fetch production orders
+    const ordersRes: any = await $fetch('/api/manufacturing/production-orders', { headers })
+    // Transform data for table display
+    orders.value = ordersRes.map((o: any) => ({
+      ...o,
+      orderNo: o.order_no,
+      product: o.products?.map((p: any) => p.product?.name).join(', ') || 'N/A',
+      scheduledDate: o.scheduled_date ? new Date(o.scheduled_date).toLocaleDateString() : 'N/A'
+    }))
+    
+    // Calculate stats
+    stats.draft = orders.value.filter((o: any) => o.status === 'Draft').length
+    stats.inProgress = orders.value.filter((o: any) => o.status === 'In Progress').length
+    stats.completed = orders.value.filter((o: any) => o.status === 'Completed').length
+    stats.cancelled = orders.value.filter((o: any) => o.status === 'Cancelled').length
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
 }
+
+const openCreate = () => {
+  resetForm()
+  editMode.value = false
+  showModal.value = true
+}
+
+const editOrder = (row: any) => {
+  // Populate form with existing data
+  form.id = row.id
+  form.quantity = row.quantity
+  form.scheduledDate = row.scheduled_date ? row.scheduled_date.split('T')[0] : ''
+  form.notes = row.notes || ''
+  
+  // Populate selected products
+  if (row.products && row.products.length > 0) {
+    selectedProducts.value = row.products.map((p: any) => {
+      const product = p.product
+      return {
+        ...product,
+        label: `${product.code} - ${product.name} (${product.type}, ${product.uom})`
+      }
+    })
+  } else {
+    selectedProducts.value = []
+  }
+  
+  // Populate selected work centers
+  if (row.work_centers && row.work_centers.length > 0) {
+    selectedWorkCenters.value = row.work_centers.map((wc: any) => {
+      const workCenter = wc.work_center
+      return {
+        ...workCenter,
+        label: `${workCenter.code} - ${workCenter.name}`
+      }
+    })
+  } else {
+    selectedWorkCenters.value = []
+  }
+  
+  editMode.value = true
+  showModal.value = true
+}
+
+const viewOrder = (row: any) => {
+  viewedOrder.value = row
+  showViewModal.value = true
+}
+
+const updateStatus = async (status: string, progress: number) => {
+  if (!viewedOrder.value) return
+  
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/status?status=${status}&progress=${progress}`, {
+      method: 'PUT',
+      headers
+    })
+    toast.add({ title: 'Success', description: `Order status updated to ${status}`, color: 'green' })
+    showViewModal.value = false
+    fetchData()
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to update status', color: 'red' })
+  }
+}
+
+const removeProduct = (prod: any) => {
+  selectedProducts.value = selectedProducts.value.filter(p => p.id !== prod.id)
+}
+
+const removeWorkCenter = (wc: any) => {
+  selectedWorkCenters.value = selectedWorkCenters.value.filter(w => w.id !== wc.id)
+}
+
+const saveOrder = async () => {
+  if (selectedProducts.value.length === 0) {
+    toast.add({ title: 'Error', description: 'Please select at least one product', color: 'red' })
+    return
+  }
+  
+  submitting.value = true
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const payload = {
+      product_ids: selectedProducts.value.map((p: any) => p.id),
+      work_center_ids: selectedWorkCenters.value.map((wc: any) => wc.id),
+      quantity: form.quantity,
+      scheduled_date: form.scheduledDate || null,
+      notes: form.notes || null
+    }
+    
+    if (editMode.value && form.id) {
+      await $fetch(`/api/manufacturing/production-orders/${form.id}`, {
+        method: 'PUT',
+        body: payload,
+        headers
+      })
+      toast.add({ title: 'Success', description: 'Production order updated successfully', color: 'green' })
+    } else {
+      await $fetch('/api/manufacturing/production-orders', {
+        method: 'POST',
+        body: payload,
+        headers
+      })
+      toast.add({ title: 'Success', description: 'Production order created successfully', color: 'green' })
+    }
+    
+    showModal.value = false
+    resetForm()
+    fetchData()
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to save order', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Helper functions
+const formatNumber = (num: number) => {
+  return new Intl.NumberFormat('id-ID').format(num)
+}
+
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleDateString('id-ID')
+}
+
+// HPP Calculation
+const calculateHpp = async () => {
+  if (!viewedOrder.value) return
+  submitting.value = true
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const result: any = await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/calculate-hpp`, {
+      method: 'POST',
+      headers,
+      body: {
+        labor_hours: hppForm.labor_hours,
+        hourly_rate: hppForm.hourly_rate,
+        overhead_rate: hppForm.overhead_rate / 100
+      }
+    })
+    
+    // Update viewed order with HPP data
+    viewedOrder.value = {
+      ...viewedOrder.value,
+      material_cost: result.material_cost,
+      labor_cost: result.labor_cost,
+      overhead_cost: result.overhead_cost,
+      total_hpp: result.total_hpp,
+      hpp_per_unit: result.hpp_per_unit
+    }
+    
+    showHppModal.value = false
+    toast.add({ title: 'Success', description: 'HPP calculated successfully', color: 'green' })
+    fetchData()
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to calculate HPP', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Record QC Result
+const recordQc = async () => {
+  if (!viewedOrder.value) return
+  submitting.value = true
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/record-qc`, {
+      method: 'POST',
+      headers,
+      body: qcForm
+    })
+    
+    toast.add({ title: 'Success', description: 'QC result recorded', color: 'green' })
+    showQcModal.value = false
+    
+    // Reset form
+    Object.assign(qcForm, {
+      good_qty: 0, defect_qty: 0, scrap_qty: 0,
+      scrap_type: '', scrap_reason: '', spoilage_expense: 0, notes: ''
+    })
+    
+    // Refresh data
+    await fetchQcResults()
+    fetchData()
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to record QC', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Fetch QC Results for current order
+const fetchQcResults = async () => {
+  if (!viewedOrder.value) return
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const result: any = await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/qc-results`, { headers })
+    qcTotals.value = result.totals || { good: 0, defect: 0, scrap: 0, defect_rate: 0 }
+  } catch (e) {
+    console.error('Failed to fetch QC results', e)
+  }
+}
+
+// Start Production
+const startProduction = async () => {
+  if (!viewedOrder.value) return
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/record-progress`, {
+      method: 'POST',
+      headers,
+      body: { completed_qty: 0 }  // Just to trigger status change
+    })
+    toast.add({ title: 'Started', description: 'Production started', color: 'green' })
+    showViewModal.value = false
+    fetchData()
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to start production', color: 'red' })
+  }
+}
+
+onMounted(() => {
+  fetchData()
+})
 </script>
+

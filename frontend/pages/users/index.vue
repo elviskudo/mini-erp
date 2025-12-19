@@ -10,8 +10,13 @@
     </div>
 
     <!-- Users Table -->
-    <UCard>
-      <UTable :rows="users" :columns="columns" :loading="loading">
+    <UCard :ui="{ body: { padding: 'p-4' } }">
+      <DataTable 
+        :rows="users" 
+        :columns="columns" 
+        :loading="loading"
+        search-placeholder="Search users..."
+      >
         <template #role-data="{ row }">
           <UBadge :color="getRoleColor(row.role)" variant="soft">{{ row.role }}</UBadge>
         </template>
@@ -26,7 +31,7 @@
             <UButton variant="ghost" icon="i-heroicons-trash" size="xs" color="red" @click="confirmDelete(row)" />
           </div>
         </template>
-      </UTable>
+      </DataTable>
     </UCard>
 
     <!-- Add/Edit User Modal -->

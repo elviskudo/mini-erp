@@ -42,22 +42,28 @@ def get_hardcoded_menus(user_role: str) -> list:
     """
     all_menus = [
         {"label": "Dashboard", "icon": "i-heroicons-home", "to": "/"},
-        {"label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "children": [
-            {"label": "Work Centers", "to": "/manufacturing/work-centers"},
-            {"label": "Products & BOM", "to": "/manufacturing/products"},
-            {"label": "Production", "to": "/manufacturing/production"}
-        ]},
-        {"label": "Inventory", "icon": "i-heroicons-cube", "children": [
-            {"label": "Stock Status", "to": "/inventory/stock"},
-            {"label": "Warehouses", "to": "/inventory/warehouses"},
-            {"label": "Movements", "to": "/inventory/movements"},
-            {"label": "Goods Receipt", "to": "/inventory/receiving"},
-            {"label": "Opname", "to": "/inventory/opname"}
+        {"label": "Analytics", "icon": "i-heroicons-chart-bar-square", "children": [
+            {"label": "Production Dashboard", "to": "/dashboard/production"},
+            {"label": "Failure Analysis", "to": "/dashboard/failures"}
         ]},
         {"label": "Procurement", "icon": "i-heroicons-shopping-cart", "children": [
             {"label": "Purchase Requests", "to": "/procurement/requests"},
             {"label": "Purchase Orders", "to": "/procurement/orders"},
             {"label": "Vendors", "to": "/procurement/vendors"}
+        ]},
+        {"label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "children": [
+            {"label": "Work Centers", "to": "/manufacturing/work-centers"},
+            {"label": "Products & BOM", "to": "/manufacturing/products"},
+            {"label": "Production Orders", "to": "/manufacturing/production"}
+        ]},
+        {"label": "Inventory", "icon": "i-heroicons-cube", "children": [
+            {"label": "Stock Status", "to": "/inventory/stock"},
+            {"label": "Warehouses", "to": "/inventory/warehouses"},
+            {"label": "Storage Zones", "to": "/inventory/storage-zones"},
+            {"label": "Movements", "to": "/inventory/movements"},
+            {"label": "Goods Receipt", "to": "/inventory/receiving"},
+            {"label": "Opname", "to": "/inventory/opname"},
+            {"label": "Overhead Report", "to": "/inventory/overhead"}
         ]},
         {"label": "Quality Control", "icon": "i-heroicons-beaker", "to": "/qc/inspections"},
         {"label": "Logistics", "icon": "i-heroicons-truck", "to": "/logistics/delivery"},
@@ -71,7 +77,12 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Employees", "to": "/hr/employees"},
             {"label": "Payroll Run", "to": "/hr/payroll"}
         ]},
-        {"label": "Users", "icon": "i-heroicons-users", "to": "/users"},
+        {"label": "CRM", "icon": "i-heroicons-users", "to": "/crm/orders"},
+        {"label": "Projects", "icon": "i-heroicons-clipboard-document-list", "to": "/projects"},
+        {"label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "to": "/maintenance"},
+        {"label": "B2B Portal", "icon": "i-heroicons-building-storefront", "to": "/portal/shop"},
+        {"label": "Compliance", "icon": "i-heroicons-shield-check", "to": "/compliance"},
+        {"label": "Users", "icon": "i-heroicons-user-circle", "to": "/users"},
         {"label": "Config", "icon": "i-heroicons-cog-6-tooth", "to": "/setup"}
     ]
     

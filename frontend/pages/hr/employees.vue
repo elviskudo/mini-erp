@@ -8,15 +8,15 @@
       <UButton icon="i-heroicons-plus" @click="openCreate">New Employee</UButton>
     </div>
 
-    <UCard :ui="{ body: { padding: '' } }">
-       <UTable :columns="columns" :rows="employees" :loading="loading">
+    <UCard :ui="{ body: { padding: 'p-4' } }">
+       <DataTable :columns="columns" :rows="employees" :loading="loading" search-placeholder="Search employees...">
             <template #status-data="{ row }">
                 <UBadge :color="row.status === 'Active' ? 'green' : 'red'" variant="subtle">{{ row.status }}</UBadge>
             </template>
             <template #actions-data="{ row }">
               <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="openEdit(row)" />
             </template>
-       </UTable>
+       </DataTable>
     </UCard>
 
     <!-- Employee Form Slideover -->

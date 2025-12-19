@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Integer, Enum, DateTime
+from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Integer, Enum, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -7,8 +7,21 @@ from datetime import datetime
 from database import Base
 
 
+class VendorRating(str, enum.Enum):
+    A = "A"  # Excellent - On-time delivery, quality products
+    B = "B"  # Good - Occasional delays
+    C = "C"  # Fair - Needs improvement
+
+
+class VendorCategory(str, enum.Enum):
+    RAW_MATERIAL = "Raw Material"
+    FINISHED_GOODS = "Finished Goods"
+    BOTH = "Both"
+
+
 class PRStatus(str, enum.Enum):
     DRAFT = "Draft"
+    PENDING_APPROVAL = "Pending Approval"
     APPROVED = "Approved"
     REJECTED = "Rejected"
     CONVERTED = "Converted"  # To PO
@@ -16,8 +29,11 @@ class PRStatus(str, enum.Enum):
 
 class POStatus(str, enum.Enum):
     DRAFT = "Draft"
-    SENT = "Sent"
-    COMPLETED = "Completed"  # Goods Received
+    PENDING_APPROVAL = "Pending Approval"
+    OPEN = "Open"  # Sent to Vendor
+    PARTIAL_RECEIVE = "Partial Receive"
+    CLOSED = "Closed"  # Fully received
+    CANCELLED = "Cancelled"
 
 
 class Vendor(Base):
@@ -28,6 +44,34 @@ class Vendor(Base):
     code = Column(String, index=True, nullable=False)
     name = Column(String, nullable=False)
     email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    rating = Column(Enum(VendorRating), default=VendorRating.B)
+    category = Column(Enum(VendorCategory), default=VendorCategory.RAW_MATERIAL)
+    
+    # Relationships
+    supplied_items = relationship("SupplierItem", back_populates="vendor", cascade="all, delete-orphan")
+
+
+class SupplierItem(Base):
+    """Mapping of items that can be purchased from a specific supplier"""
+    __tablename__ = "supplier_items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=False)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    agreed_price = Column(Float, default=0.0)  # Contracted price
+    lead_time_days = Column(Integer, default=7)  # Delivery lead time
+    min_order_qty = Column(Float, default=1.0)
+    is_preferred = Column(Boolean, default=False)  # Preferred supplier for this item
+    
+    vendor = relationship("Vendor", back_populates="supplied_items")
+    product = relationship("Product")
+    
+    __table_args__ = (
+        UniqueConstraint('vendor_id', 'product_id', name='uq_vendor_product'),
+    )
 
 
 class PurchaseRequest(Base):
@@ -35,9 +79,13 @@ class PurchaseRequest(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
-    requester_id = Column(String, nullable=True)  # User ID
+    pr_number = Column(String, index=True, nullable=False)
+    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    department = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    required_date = Column(DateTime, nullable=True)
     status = Column(Enum(PRStatus), default=PRStatus.DRAFT)
+    notes = Column(String, nullable=True)
     
     items = relationship("PRLine", back_populates="pr", cascade="all, delete-orphan")
 
@@ -50,6 +98,7 @@ class PRLine(Base):
     pr_id = Column(UUID(as_uuid=True), ForeignKey("purchase_requests.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
     quantity = Column(Float, nullable=False)
+    estimated_price = Column(Float, default=0.0)
 
     pr = relationship("PurchaseRequest", back_populates="items")
     product = relationship("Product")
@@ -60,10 +109,26 @@ class PurchaseOrder(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    po_number = Column(String, index=True, nullable=False)
     vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=False)
+    pr_id = Column(UUID(as_uuid=True), ForeignKey("purchase_requests.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    expected_delivery = Column(DateTime, nullable=True)
     status = Column(Enum(POStatus), default=POStatus.DRAFT)
-    pr_id = Column(UUID(as_uuid=True), ForeignKey("purchase_requests.id"), nullable=True)  # Link back to PR
+    
+    # Budget & Approval
+    budget_checked = Column(Boolean, default=False)
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    
+    # Landed Cost components
+    subtotal = Column(Float, default=0.0)
+    shipping_cost = Column(Float, default=0.0)
+    insurance_cost = Column(Float, default=0.0)
+    customs_duty = Column(Float, default=0.0)
+    total_amount = Column(Float, default=0.0)
+    
+    notes = Column(String, nullable=True)
 
     items = relationship("POLine", back_populates="po", cascade="all, delete-orphan")
     vendor = relationship("Vendor")
@@ -77,7 +142,9 @@ class POLine(Base):
     po_id = Column(UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
     quantity = Column(Float, nullable=False)
+    received_qty = Column(Float, default=0.0)  # For partial receiving
     unit_price = Column(Float, default=0.0)
+    line_total = Column(Float, default=0.0)
 
     po = relationship("PurchaseOrder", back_populates="items")
     product = relationship("Product")

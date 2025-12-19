@@ -18,6 +18,12 @@ class Verdict(str, enum.Enum):
     PENDING = "Pending"
 
 
+class ScrapType(str, enum.Enum):
+    TOTAL_LOSS = "Total Loss"  # Complete waste, disposed
+    GRADE_B = "Grade B"  # Defective but sellable at lower price
+    REWORK = "Rework"  # Can be reprocessed
+
+
 class InspectionOrder(Base):
     __tablename__ = "inspection_orders"
 
@@ -47,3 +53,38 @@ class InspectionResult(Base):
     passed = Column(Boolean, default=False)
 
     inspection_order = relationship("InspectionOrder", back_populates="results")
+
+
+class ProductionQCResult(Base):
+    """QC results for production orders - tracks Good/Defect/Scrap quantities"""
+    __tablename__ = "production_qc_results"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    production_order_id = Column(UUID(as_uuid=True), ForeignKey("production_orders.id"), nullable=False)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    
+    recorded_at = Column(DateTime, default=datetime.utcnow)
+    inspector_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
+    # Quantity breakdown
+    good_qty = Column(Float, default=0.0)  # Passed QC
+    defect_qty = Column(Float, default=0.0)  # Has defects
+    scrap_qty = Column(Float, default=0.0)  # Total waste
+    
+    # Scrap handling
+    scrap_type = Column(Enum(ScrapType), nullable=True)
+    scrap_reason = Column(String, nullable=True)  # "Suhu Oven Tidak Stabil" etc
+    
+    # Financial impact
+    salvage_value = Column(Float, default=0.0)  # Value recovered from Grade B
+    spoilage_expense = Column(Float, default=0.0)  # Cost of total loss
+    rework_cost = Column(Float, default=0.0)  # Additional cost for rework
+    
+    # Grade B product (if applicable)
+    grade_b_product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=True)
+    
+    notes = Column(String, nullable=True)
+    
+    product = relationship("Product", foreign_keys=[product_id])
+    grade_b_product = relationship("Product", foreign_keys=[grade_b_product_id])

@@ -442,6 +442,17 @@ async def record_qc_result(
     if order.products and len(order.products) > 0:
         product_id = order.products[0].product_id
     
+    # Convert empty strings to None for optional fields
+    scrap_type = payload.get('scrap_type')
+    if scrap_type == '':
+        scrap_type = None
+    scrap_reason = payload.get('scrap_reason')
+    if scrap_reason == '':
+        scrap_reason = None
+    notes = payload.get('notes')
+    if notes == '':
+        notes = None
+    
     # Create QC Result
     qc_result = models.ProductionQCResult(
         tenant_id=current_user.tenant_id,
@@ -451,12 +462,12 @@ async def record_qc_result(
         good_qty=payload.get('good_qty', 0),
         defect_qty=payload.get('defect_qty', 0),
         scrap_qty=payload.get('scrap_qty', 0),
-        scrap_type=payload.get('scrap_type'),
-        scrap_reason=payload.get('scrap_reason'),
+        scrap_type=scrap_type,
+        scrap_reason=scrap_reason,
         salvage_value=payload.get('salvage_value', 0),
         spoilage_expense=payload.get('spoilage_expense', 0),
         rework_cost=payload.get('rework_cost', 0),
-        notes=payload.get('notes')
+        notes=notes
     )
     
     db.add(qc_result)
@@ -521,3 +532,127 @@ async def get_qc_results(
             "spoilage_expense": total_spoilage
         }
     }
+
+
+@router.post("/production-orders/{order_id}/transfer-to-stock")
+async def transfer_to_stock(
+    order_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Transfer completed production order to inventory stock.
+    Creates inventory batch(es) for finished goods.
+    """
+    from datetime import datetime
+    import uuid as uuid_lib
+    from models import models_receiving, models_inventory
+    
+    # Get production order with products
+    result = await db.execute(
+        select(models.ProductionOrder)
+        .where(models.ProductionOrder.id == order_id)
+        .options(selectinload(models.ProductionOrder.products).selectinload(models.ProductionOrderProduct.product))
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Production order not found")
+    
+    if order.status != models.ProductionOrderStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Only completed orders can be transferred to stock")
+    
+    if order.completed_qty <= 0:
+        raise HTTPException(status_code=400, detail="No completed quantity to transfer")
+    
+    # Get or create default location for finished goods
+    loc_result = await db.execute(
+        select(models_inventory.Location)
+        .where(models_inventory.Location.tenant_id == current_user.tenant_id)
+        .limit(1)
+    )
+    location = loc_result.scalar_one_or_none()
+    
+    if not location:
+        # Create a default location
+        wh_result = await db.execute(
+            select(models_inventory.Warehouse)
+            .where(models_inventory.Warehouse.tenant_id == current_user.tenant_id)
+            .limit(1)
+        )
+        warehouse = wh_result.scalar_one_or_none()
+        
+        if not warehouse:
+            # Create default warehouse
+            warehouse = models_inventory.Warehouse(
+                tenant_id=current_user.tenant_id,
+                code="WH-DEFAULT",
+                name="Default Warehouse",
+                address="Main Production Facility"
+            )
+            db.add(warehouse)
+            await db.flush()
+        
+        # Create default location
+        location = models_inventory.Location(
+            tenant_id=current_user.tenant_id,
+            warehouse_id=warehouse.id,
+            code="FG-001",
+            name="Finished Goods Storage"
+        )
+        db.add(location)
+        await db.flush()
+    
+    batches_created = []
+    
+    # Create inventory batch for each product in the order
+    for prod_item in order.products:
+        batch_number = f"PROD-{order.order_no}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        
+        batch = models_receiving.InventoryBatch(
+            id=uuid_lib.uuid4(),
+            tenant_id=current_user.tenant_id,
+            product_id=prod_item.product_id,
+            batch_number=batch_number,
+            quantity_on_hand=order.completed_qty,
+            location_id=location.id,
+            origin_type=models_receiving.OriginType.MANUFACTURED,
+            unit_cost=order.hpp_per_unit or 0,
+            production_order_id=uuid_lib.UUID(order_id),
+            qr_code_data=f"BATCH:{batch_number}|PROD:{prod_item.product.code if prod_item.product else 'N/A'}|QTY:{order.completed_qty}"
+        )
+        db.add(batch)
+        
+        # Create stock movement record for traceability
+        from models import models_ledger
+        movement = models_ledger.StockMovement(
+            id=uuid_lib.uuid4(),
+            tenant_id=current_user.tenant_id,
+            product_id=prod_item.product_id,
+            batch_id=batch.id,
+            location_id=location.id,
+            quantity_change=order.completed_qty,
+            movement_type=models_ledger.MovementType.INBOUND,
+            reference_id=f"PROD:{order.order_no}",
+            created_by=current_user.id,
+            notes=f"Transferred from production order {order.order_no}"
+        )
+        db.add(movement)
+        
+        batches_created.append({
+            "batch_number": batch_number,
+            "product_id": str(prod_item.product_id),
+            "product_name": prod_item.product.name if prod_item.product else "Unknown",
+            "quantity": order.completed_qty,
+            "unit_cost": order.hpp_per_unit or 0
+        })
+    
+    await db.commit()
+    
+    return {
+        "message": f"Successfully transferred {order.completed_qty} units to stock",
+        "order_no": order.order_no,
+        "batches_created": batches_created
+    }
+

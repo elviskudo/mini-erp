@@ -35,20 +35,20 @@
         </template>
 
         <form @submit.prevent="submitInspection" class="space-y-4">
-             <UFormGroup label="Result">
+             <UFormGroup label="Result" required hint="Inspection outcome" :ui="{ hint: 'text-xs text-gray-400' }">
                 <div class="flex gap-4">
                     <URadio v-model="form.status" value="Pass" label="Pass" />
                     <URadio v-model="form.status" value="Fail" label="Fail" />
                 </div>
             </UFormGroup>
             
-            <UFormGroup label="Measured Values (JSON)">
-                <UTextarea v-model="form.notes" placeholder='{"ph": 7.0, "viscosity": 100}' />
+            <UFormGroup label="Measured Values / Notes" hint="Enter measured values as JSON or free text" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UTextarea v-model="form.notes" placeholder='{"ph": 7.0, "viscosity": 100}' rows="3" />
             </UFormGroup>
 
             <div class="flex justify-end gap-2 mt-4">
                 <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" :loading="submitting">Submit Result</UButton>
+                <UButton type="submit" :loading="submitting" :disabled="!form.status">Submit Result</UButton>
             </div>
         </form>
       </UCard>

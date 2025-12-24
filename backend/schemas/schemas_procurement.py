@@ -10,9 +10,17 @@ class PRCreate(BaseModel):
     items: List[PRItemCreate]
 
 class VendorCreate(BaseModel):
-    code: str
+    code: str = None
     name: str
-    email: str
+    email: str = None
+    phone: str = None
+    address: str = None
+    rating: str = "B"
+    category: str = "Raw Material"
+    payment_term: str = "Net 30"
+    credit_limit: float = 0.0
+    latitude: float = None
+    longitude: float = None
 
 class POCreateFromPR(BaseModel):
     pr_id: uuid.UUID

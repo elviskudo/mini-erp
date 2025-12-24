@@ -18,3 +18,5 @@ alembic
 cloudinary
 python-multipart
 stripe
+openpyxl
+reportlab

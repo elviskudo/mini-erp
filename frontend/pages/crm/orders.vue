@@ -45,13 +45,13 @@
 
         <div class="flex-1 overflow-y-auto space-y-6">
              <!-- Customer Selection -->
-            <UFormGroup label="Customer" required>
+            <UFormGroup label="Customer" required hint="Select customer for this order" :ui="{ hint: 'text-xs text-gray-400' }">
                 <USelectMenu v-model="selectedCustomer" 
                              :options="customers" 
                              option-attribute="name"
-                             placeholder="Select Customer"
+                             placeholder="Search and select customer..."
                              searchable 
-                             searchable-placeholder="Search customer..." />
+                             searchable-placeholder="Type customer name..." />
                 <div v-if="selectedCustomer" class="mt-2 text-sm text-gray-500">
                     Credit Limit: <span class="font-mono font-bold">{{ formatCurrency(selectedCustomer.credit_limit) }}</span> | 
                     Balance: <span class="font-mono text-red-500">{{ formatCurrency(selectedCustomer.current_balance) }}</span>
@@ -62,20 +62,20 @@
             <div class="border rounded-lg p-4">
                 <h4 class="font-bold mb-4">Order Items</h4>
                 <div class="flex gap-2 mb-4 items-end">
-                    <UFormGroup label="Product" class="flex-1">
+                    <UFormGroup label="Product" required hint="Select product to add" :ui="{ hint: 'text-xs text-gray-400' }" class="flex-1">
                         <USelectMenu v-model="currentItem.product" 
                                      :options="products" 
                                      option-attribute="name"
-                                     placeholder="Select Product"
+                                     placeholder="Search products..."
                                      searchable />
                     </UFormGroup>
-                    <UFormGroup label="Qty" class="w-24">
-                        <UInput v-model="currentItem.quantity" type="number" min="1" />
+                    <UFormGroup label="Qty" required hint="Quantity" :ui="{ hint: 'text-xs text-gray-400' }" class="w-24">
+                        <UInput v-model="currentItem.quantity" type="number" min="1" placeholder="1" />
                     </UFormGroup>
-                     <UFormGroup label="Price" class="w-32">
-                        <UInput v-model="currentItem.price" type="number" min="0" />
+                     <UFormGroup label="Price" required hint="Unit price" :ui="{ hint: 'text-xs text-gray-400' }" class="w-32">
+                        <UInput v-model="currentItem.price" type="number" min="0" placeholder="0" />
                     </UFormGroup>
-                    <UButton icon="i-heroicons-plus" color="black" @click="addItem" :disabled="!currentItem.product">Add</UButton>
+                    <UButton icon="i-heroicons-plus" color="black" @click="addItem" :disabled="!currentItem.product || currentItem.quantity <= 0">Add</UButton>
                 </div>
 
                 <table class="w-full text-sm">

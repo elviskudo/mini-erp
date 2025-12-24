@@ -28,30 +28,30 @@
       <div class="p-4">
         <h3 class="text-lg font-bold mb-4">Schedule Maintenance</h3>
         <UForm :state="form" class="space-y-4" @submit="onSubmit">
-            <UFormGroup label="Asset" name="asset_id" required>
+            <UFormGroup label="Asset" name="asset_id" required hint="Select equipment for maintenance" :ui="{ hint: 'text-xs text-gray-400' }">
                  <USelectMenu v-model="form.asset_id" 
                               :options="assets" 
                               option-attribute="name"
                               value-attribute="id"
-                              placeholder="Select Asset"
+                              placeholder="Search and select asset..."
                               searchable />
             </UFormGroup>
-             <UFormGroup label="Type" name="type" required>
+             <UFormGroup label="Type" name="type" required hint="Maintenance category" :ui="{ hint: 'text-xs text-gray-400' }">
                 <USelect v-model="form.type" :options="['PREVENTIVE', 'CALIBRATION', 'CORRECTIVE']" />
             </UFormGroup>
-            <UFormGroup label="Scheduled Date" name="scheduled_date" required>
+            <UFormGroup label="Scheduled Date" name="scheduled_date" required hint="When maintenance is planned" :ui="{ hint: 'text-xs text-gray-400' }">
                  <UInput v-model="form.scheduled_date" type="date" />
             </UFormGroup>
-            <UFormGroup label="Description" name="description">
-                <UTextarea v-model="form.description" />
+            <UFormGroup label="Description" name="description" hint="Details about the maintenance work" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UTextarea v-model="form.description" placeholder="Describe the maintenance task..." rows="3" />
             </UFormGroup>
-             <UFormGroup label="Technician" name="technician">
-                <UInput v-model="form.technician" placeholder="Name or ID" />
+             <UFormGroup label="Technician" name="technician" hint="Assigned personnel" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UInput v-model="form.technician" placeholder="e.g. John Smith" />
             </UFormGroup>
 
             <div class="flex justify-end gap-2 mt-6">
                 <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" color="black" :loading="saving">Create Order</UButton>
+                <UButton type="submit" color="black" :loading="saving" :disabled="!form.asset_id || !form.scheduled_date">Create Order</UButton>
             </div>
         </UForm>
       </div>

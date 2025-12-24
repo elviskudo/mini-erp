@@ -5,9 +5,12 @@
         <h1 class="text-2xl font-bold text-gray-900">Production Orders</h1>
         <p class="text-gray-500">Manage manufacturing production orders</p>
       </div>
-      <UButton icon="i-heroicons-plus" @click="openCreate">
-        New Production Order
-      </UButton>
+      <div class="flex gap-2">
+        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData('csv')">CSV</UButton>
+        <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" @click="exportData('xlsx')">XLS</UButton>
+        <UButton icon="i-heroicons-document" variant="outline" size="sm" @click="exportData('pdf')">PDF</UButton>
+        <UButton icon="i-heroicons-plus" @click="openCreate">New Production Order</UButton>
+      </div>
     </div>
 
     <!-- Stats Cards -->
@@ -78,11 +81,12 @@
       v-model="showModal" 
       :title="editMode ? 'Edit Production Order' : 'New Production Order'"
       :loading="submitting"
+      :disabled="!isFormValid"
       @submit="saveOrder"
     >
       <div class="space-y-4">
         <!-- Products Multi-Select Autocomplete -->
-        <UFormGroup label="Products" required>
+        <UFormGroup label="Products" required hint="Select products to manufacture" :ui="{ hint: 'text-xs text-gray-400' }">
           <USelectMenu
             v-model="selectedProducts"
             :options="productOptions"
@@ -125,10 +129,10 @@
         </UFormGroup>
         
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Quantity" required>
+          <UFormGroup label="Quantity" required hint="Units to produce" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.quantity" type="number" min="1" />
           </UFormGroup>
-          <UFormGroup label="Scheduled Date">
+          <UFormGroup label="Scheduled Date" hint="Production target date" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.scheduledDate" type="date" />
           </UFormGroup>
         </div>
@@ -311,8 +315,14 @@
               <UButton v-if="viewedOrder.status === 'Draft'" color="yellow" @click="startProduction">
                 Start Production
               </UButton>
-              <UButton v-if="viewedOrder.status === 'In Progress'" color="green" @click="showQcModal = true">
+              <UButton v-if="viewedOrder.status === 'In Progress'" color="green" @click="showProgressModal = true">
                 Record Progress
+              </UButton>
+              <UButton v-if="viewedOrder.status === 'In Progress'" color="blue" variant="outline" @click="showQcModal = true">
+                Record QC
+              </UButton>
+              <UButton v-if="viewedOrder.status === 'Completed'" color="primary" icon="i-heroicons-archive-box-arrow-down" @click="transferToStock">
+                Transfer to Stock
               </UButton>
             </div>
             <UButton color="gray" variant="ghost" @click="showViewModal = false">Close</UButton>
@@ -390,6 +400,56 @@
         </template>
       </UCard>
     </UModal>
+
+    <!-- Progress Recording Modal -->
+    <UModal v-model="showProgressModal">
+      <UCard>
+        <template #header>
+          <h3 class="text-lg font-semibold">Record Production Progress</h3>
+        </template>
+        <div class="space-y-4">
+          <div class="bg-gray-50 rounded-lg p-4">
+            <div class="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p class="text-sm text-gray-500">Target Qty</p>
+                <p class="text-xl font-bold">{{ viewedOrder?.quantity || 0 }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-gray-500">Completed</p>
+                <p class="text-xl font-bold text-green-600">{{ viewedOrder?.completed_qty || 0 }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-gray-500">Remaining</p>
+                <p class="text-xl font-bold text-orange-600">{{ Math.max(0, (viewedOrder?.quantity || 0) - (viewedOrder?.completed_qty || 0)) }}</p>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex justify-between text-sm mb-1">
+                <span>Progress</span>
+                <span>{{ viewedOrder?.progress || 0 }}%</span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div class="bg-green-500 h-2 rounded-full transition-all" :style="{ width: (viewedOrder?.progress || 0) + '%' }"></div>
+              </div>
+            </div>
+          </div>
+          
+          <UFormGroup label="Completed Quantity" hint="Units completed in this batch" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="progressForm.completed_qty" type="number" min="0" placeholder="e.g. 100" />
+          </UFormGroup>
+          
+          <UFormGroup label="Notes (Optional)" hint="Any notes for this progress entry" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UTextarea v-model="progressForm.notes" rows="2" placeholder="e.g. Batch completed without issues" />
+          </UFormGroup>
+        </div>
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <UButton variant="ghost" @click="showProgressModal = false">Cancel</UButton>
+            <UButton :loading="submitting" @click="recordProgress">Save Progress</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
@@ -424,6 +484,11 @@ const form = reactive({
   notes: ''
 })
 
+// Form validation - button enabled only when required fields are filled
+const isFormValid = computed(() => {
+    return selectedProducts.value.length > 0 && form.quantity > 0
+})
+
 // View modal state
 const showViewModal = ref(false)
 const viewedOrder = ref<any>(null)
@@ -453,6 +518,13 @@ const qcTotals = ref({
   defect: 0,
   scrap: 0,
   defect_rate: 0
+})
+
+// Progress Modal state
+const showProgressModal = ref(false)
+const progressForm = reactive({
+  completed_qty: 0,
+  notes: ''
 })
 
 const scrapTypeOptions = [
@@ -776,6 +848,100 @@ const startProduction = async () => {
     fetchData()
   } catch (e) {
     toast.add({ title: 'Error', description: 'Failed to start production', color: 'red' })
+  }
+}
+
+// Record Progress
+const recordProgress = async () => {
+  if (!viewedOrder.value) return
+  
+  const qty = Number(progressForm.completed_qty)
+  if (qty <= 0) {
+    toast.add({ title: 'Error', description: 'Please enter a valid quantity', color: 'red' })
+    return
+  }
+  
+  submitting.value = true
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const result: any = await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/record-progress`, {
+      method: 'POST',
+      headers,
+      body: { 
+        completed_qty: qty,
+        notes: progressForm.notes
+      }
+    })
+    
+    // Update viewed order with new values
+    viewedOrder.value.completed_qty = result.completed_qty
+    viewedOrder.value.progress = result.progress
+    viewedOrder.value.status = result.status
+    
+    toast.add({ 
+      title: 'Progress Recorded', 
+      description: `Added ${qty} units. Progress: ${result.progress}%`, 
+      color: 'green' 
+    })
+    
+    // Reset form
+    progressForm.completed_qty = 0
+    progressForm.notes = ''
+    showProgressModal.value = false
+    
+    // Refresh data
+    fetchData()
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to record progress', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+// Transfer to Stock
+const transferToStock = async () => {
+  if (!viewedOrder.value) return
+  
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const result: any = await $fetch(`/api/manufacturing/production-orders/${viewedOrder.value.id}/transfer-to-stock`, {
+      method: 'POST',
+      headers,
+      body: {}
+    })
+    
+    toast.add({ 
+      title: 'Transferred to Stock', 
+      description: result.message, 
+      color: 'green' 
+    })
+    
+    showViewModal.value = false
+    fetchData()
+  } catch (e: any) {
+    const errorMsg = e?.data?.detail || 'Failed to transfer to stock'
+    toast.add({ title: 'Error', description: errorMsg, color: 'red' })
+  }
+}
+
+const exportData = async (format: string) => {
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const res = await $fetch(`/api/export/production-orders?format=${format}`, { 
+      headers,
+      responseType: 'blob'
+    })
+    
+    const blob = res as Blob
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `production_orders_${new Date().toISOString().split('T')[0]}.${format}`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    toast.add({ title: 'Exported', description: `Data exported to ${format.toUpperCase()}`, color: 'green' })
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to export data', color: 'red' })
   }
 }
 

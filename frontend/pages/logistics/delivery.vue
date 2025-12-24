@@ -27,7 +27,7 @@
         </template>
 
         <form @submit.prevent="createDo" class="space-y-4">
-             <UFormGroup label="Sales Order Ref (Mock)" name="so_id">
+             <UFormGroup label="Sales Order Reference" name="so_id" required hint="Link to original sales order" :ui="{ hint: 'text-xs text-gray-400' }">
                 <UInput v-model="form.so_id" placeholder="e.g. SO-1001" />
             </UFormGroup>
 
@@ -40,21 +40,15 @@
                  <div class="space-y-2 max-h-60 overflow-y-auto">
                     <div v-for="(item, index) in form.items" :key="index" class="p-2 border rounded bg-gray-50 space-y-2">
                         <div class="flex gap-2">
-                             <UFormGroup label="Product" class="flex-1">
+                             <UFormGroup label="Product" required hint="Select product" :ui="{ hint: 'text-xs text-gray-400' }" class="flex-1">
                                 <USelect v-model="item.product_id" :options="products" option-attribute="name" value-attribute="id" placeholder="Select Product" />
                             </UFormGroup>
-                            <UFormGroup label="Qty" class="w-24">
-                                <UInput v-model="item.quantity" type="number" step="1" />
+                            <UFormGroup label="Qty" required hint="Quantity" :ui="{ hint: 'text-xs text-gray-400' }" class="w-24">
+                                <UInput v-model="item.quantity" type="number" step="1" min="1" />
                             </UFormGroup>
                              <UButton icon="i-heroicons-trash" color="red" variant="ghost" class="mt-6" @click="removeItem(index)" />
                         </div>
-                        <!-- Simple Batch Selection: Ideally this should act like issuance and auto-suggest, 
-                             or be a dropdown of available batches for this product.
-                             For now, let's fetch available batches for selected product? 
-                             Or just text input for MVP if we know the batch ID?
-                             The backend requires `batch_id` (UUID). We need a dropdown of batches.
-                        -->
-                         <UFormGroup label="Batch to Pick From">
+                         <UFormGroup label="Batch to Pick From" required hint="Select stock batch" :ui="{ hint: 'text-xs text-gray-400' }">
                              <USelect v-model="item.batch_id" :options="getBatchesForProduct(item.product_id)" option-attribute="label" value-attribute="id" placeholder="Select Batch..." />
                         </UFormGroup>
                     </div>
@@ -63,7 +57,7 @@
 
             <div class="flex justify-end gap-2 mt-4">
                 <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" :loading="submitting">Create DO</UButton>
+                <UButton type="submit" :loading="submitting" :disabled="!form.so_id || form.items.length === 0">Create DO</UButton>
             </div>
         </form>
       </UCard>

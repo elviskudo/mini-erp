@@ -5,7 +5,12 @@
         <h2 class="text-xl font-semibold text-gray-900">Purchase Orders</h2>
         <p class="text-gray-500">Manage purchase orders and receiving</p>
       </div>
-      <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchPos">Refresh</UButton>
+      <div class="flex gap-2">
+        <UDropdown :items="exportItems">
+          <UButton color="gray" variant="outline" icon="i-heroicons-arrow-down-tray">Export</UButton>
+        </UDropdown>
+        <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchPos">Refresh</UButton>
+      </div>
     </div>
 
     <!-- Stats -->
@@ -34,17 +39,31 @@
             </UBadge>
           </div>
         </template>
+        <template #created_at-data="{ row }">
+          <span class="text-sm text-gray-600">{{ formatDate(row.created_at) }}</span>
+        </template>
         <template #status-data="{ row }">
           <UBadge :color="getStatusColor(row.status)" variant="subtle">{{ row.status }}</UBadge>
         </template>
         <template #total-data="{ row }">
           <span class="font-medium">Rp {{ formatNumber(row.total_amount || 0) }}</span>
         </template>
+        <template #progress-data="{ row }">
+          <div class="flex items-center gap-2 w-24">
+            <div class="flex-1 bg-gray-200 rounded-full h-2">
+              <div class="bg-green-500 h-2 rounded-full" :style="{ width: (row.progress || 0) + '%' }"></div>
+            </div>
+            <span class="text-xs text-gray-500">{{ row.progress || 0 }}%</span>
+          </div>
+        </template>
+        <template #payment_status-data="{ row }">
+          <UBadge :color="getPaymentColor(row.payment_status)" variant="subtle">{{ row.payment_status || 'Unpaid' }}</UBadge>
+        </template>
         <template #actions-data="{ row }">
           <div class="flex gap-1">
             <UButton icon="i-heroicons-eye" color="gray" variant="ghost" size="xs" @click="viewOrder(row)" title="View Details" />
             <UButton icon="i-heroicons-document-arrow-down" color="primary" variant="ghost" size="xs" @click="downloadPdf(row)" title="Download PDF" />
-            <UButton v-if="row.status === 'Draft'" icon="i-heroicons-paper-airplane" color="blue" variant="ghost" size="xs" @click="sendToVendor(row)" title="Send to Vendor" />
+            <UButton v-if="row.status === 'Draft'" icon="i-heroicons-paper-airplane" color="blue" variant="ghost" size="xs" @click="openSendModal(row)" title="Send to Vendor" />
             <UButton v-if="row.status === 'Open' || row.status === 'Partial Receive'" icon="i-heroicons-inbox-arrow-down" color="green" variant="ghost" size="xs" @click="openReceive(row)" title="Receive Goods" />
           </div>
         </template>
@@ -192,6 +211,39 @@
         </template>
       </UCard>
     </UModal>
+
+    <!-- Send to Vendor Modal -->
+    <UModal v-model="showSendModal">
+      <UCard>
+        <template #header>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-heroicons-paper-airplane" class="text-blue-500" />
+            <h3 class="text-lg font-semibold">Send PO to Vendor</h3>
+          </div>
+        </template>
+        
+        <div class="space-y-4">
+          <div v-if="sendingPo" class="bg-gray-50 rounded-lg p-4">
+            <p class="text-sm text-gray-500">You're about to send:</p>
+            <p class="font-semibold text-lg">{{ sendingPo.po_number }}</p>
+            <p class="text-sm text-gray-600">to {{ sendingPo.vendor?.name || 'vendor' }}</p>
+          </div>
+          
+          <UFormGroup label="Notes for Vendor" hint="Optional message to include">
+            <UTextarea v-model="sendNotes" rows="3" placeholder="Add delivery instructions, special requirements, etc..." />
+          </UFormGroup>
+        </div>
+        
+        <template #footer>
+          <div class="flex justify-end gap-3">
+            <UButton variant="ghost" @click="showSendModal = false">Cancel</UButton>
+            <UButton color="blue" icon="i-heroicons-paper-airplane" @click="confirmSendToVendor">
+              Send to Vendor
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
@@ -218,8 +270,26 @@ const columns = [
   { key: 'vendor', label: 'Vendor' },
   { key: 'created_at', label: 'Date' },
   { key: 'status', label: 'Status' },
+  { key: 'progress', label: 'Progress' },
+  { key: 'payment_status', label: 'Payment' },
   { key: 'total', label: 'Total Amount' },
   { key: 'actions', label: '' }
+]
+
+const exportItems = [
+  [{
+    label: 'Export as Excel',
+    icon: 'i-heroicons-table-cells',
+    click: () => exportData('xlsx')
+  }, {
+    label: 'Export as CSV',
+    icon: 'i-heroicons-document-text',
+    click: () => exportData('csv')
+  }, {
+    label: 'Export as PDF',
+    icon: 'i-heroicons-document',
+    click: () => exportData('pdf')
+  }]
 ]
 
 const receiveForm = reactive({
@@ -276,6 +346,96 @@ const formatNumber = (num: number) => {
   return new Intl.NumberFormat('id-ID').format(num)
 }
 
+const formatDate = (date: string | null) => {
+  if (!date) return '-'
+  return new Date(date).toLocaleDateString('id-ID', { 
+    day: '2-digit', 
+    month: 'short', 
+    year: 'numeric' 
+  })
+}
+
+const getPaymentColor = (status: string) => {
+  switch(status) {
+    case 'Paid': return 'green'
+    case 'Partial': return 'yellow'
+    case 'Unpaid': return 'red'
+    default: return 'gray'
+  }
+}
+
+const exportData = async (format: string) => {
+  const data = orders.value.map((po: any) => ({
+    'PO Number': po.po_number || po.id?.slice(0, 8),
+    'Vendor': po.vendor?.name || 'Unknown',
+    'Date': po.created_at ? new Date(po.created_at).toLocaleDateString('id-ID') : '-',
+    'Status': po.status,
+    'Total': 'Rp ' + formatNumber(po.total_amount || 0)
+  }))
+  
+  if (format === 'csv') {
+    const headers = Object.keys(data[0] || {}).join(',')
+    const rows = data.map((row: any) => Object.values(row).join(',')).join('\n')
+    const csv = headers + '\n' + rows
+    downloadFile(csv, 'purchase_orders.csv', 'text/csv')
+  } else if (format === 'xlsx') {
+    const headers = Object.keys(data[0] || {}).join('\t')
+    const rows = data.map((row: any) => Object.values(row).join('\t')).join('\n')
+    const xls = headers + '\n' + rows
+    downloadFile(xls, 'purchase_orders.xls', 'application/vnd.ms-excel')
+  } else if (format === 'pdf') {
+    const companyName = authStore.user?.tenant_name || 'PT. Mini ERP Indonesia'
+    const exportDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    const html = `
+      <html><head><title>Purchase Orders</title>
+      <style>
+        body{font-family:Arial,sans-serif;margin:20px}
+        .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #2563eb;padding-bottom:15px;margin-bottom:20px}
+        .company-name{font-size:20px;font-weight:bold;color:#1e40af}
+        .report-info{text-align:right;color:#666}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #ddd;padding:10px;text-align:left}
+        th{background:#2563eb;color:white}
+        .footer{margin-top:20px;text-align:center;color:#666;font-size:12px}
+      </style></head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="company-name">${companyName}</div>
+            <div style="color:#666">Jakarta, Indonesia</div>
+          </div>
+          <div class="report-info">
+            <div style="font-size:18px;font-weight:bold;color:#2563eb">PURCHASE ORDERS</div>
+            <div>Export Date: ${exportDate}</div>
+          </div>
+        </div>
+        <table>
+          <tr>${Object.keys(data[0] || {}).map(k => '<th>' + k + '</th>').join('')}</tr>
+          ${data.map((row: any) => '<tr>' + Object.values(row).map(v => '<td>' + v + '</td>').join('') + '</tr>').join('')}
+        </table>
+        <div class="footer">Generated by Mini-ERP System on ${exportDate}</div>
+      </body></html>
+    `
+    const win = window.open('', '_blank')
+    if (win) {
+      win.document.write(html)
+      win.document.close()
+      win.print()
+    }
+  }
+  toast.add({ title: 'Export', description: `Exported as ${format.toUpperCase()}`, color: 'green' })
+}
+
+const downloadFile = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 const fetchPos = async () => {
   loading.value = true
   try {
@@ -318,12 +478,32 @@ const downloadPdf = async (row: any) => {
   }
 }
 
-const sendToVendor = async (row: any) => {
-  if (!confirm('Send this PO to vendor?')) return
+// Send to Vendor Modal
+const showSendModal = ref(false)
+const sendNotes = ref('')
+const sendingPo = ref<any>(null)
+
+const openSendModal = (row: any) => {
+  sendingPo.value = row
+  sendNotes.value = ''
+  showSendModal.value = true
+}
+
+const confirmSendToVendor = async () => {
+  if (!sendingPo.value) return
   try {
     const headers = { Authorization: `Bearer ${authStore.token}` }
-    await $fetch(`/api/procurement/orders/${row.id}/send`, { method: 'POST', headers })
-    toast.add({ title: 'Sent', description: 'PO sent to vendor', color: 'green' })
+    await $fetch(`/api/procurement/orders/${sendingPo.value.id}/send`, { 
+      method: 'POST', 
+      headers,
+      body: { notes: sendNotes.value }
+    })
+    showSendModal.value = false
+    toast.add({ 
+      title: '✓ PO Sent!', 
+      description: `${sendingPo.value.po_number} has been sent to ${sendingPo.value.vendor?.name || 'vendor'}`, 
+      color: 'green' 
+    })
     fetchPos()
   } catch (e) {
     toast.add({ title: 'Error', description: 'Failed to send PO', color: 'red' })

@@ -1,94 +1,103 @@
 /**
- * Currency composable - provides currency configuration from user settings
+ * Currency composable - provides currency configuration from tenant settings API
  */
 import { useAuthStore } from '~/stores/auth'
 
 export interface CurrencyConfig {
     code: string
     symbol: string
-    locale: string
+    position: 'before' | 'after'
+    thousandSeparator: string
+    decimalSeparator: string
     decimals: number
 }
 
-const currencyConfigs: Record<string, CurrencyConfig> = {
-    IDR: { code: 'IDR', symbol: 'Rp', locale: 'id-ID', decimals: 0 },
-    USD: { code: 'USD', symbol: '$', locale: 'en-US', decimals: 2 },
-    EUR: { code: 'EUR', symbol: '€', locale: 'de-DE', decimals: 2 },
-    SGD: { code: 'SGD', symbol: 'S$', locale: 'en-SG', decimals: 2 },
-    MYR: { code: 'MYR', symbol: 'RM', locale: 'ms-MY', decimals: 2 },
-    JPY: { code: 'JPY', symbol: '¥', locale: 'ja-JP', decimals: 0 },
-    CNY: { code: 'CNY', symbol: '¥', locale: 'zh-CN', decimals: 2 },
-    GBP: { code: 'GBP', symbol: '£', locale: 'en-GB', decimals: 2 },
-    AUD: { code: 'AUD', symbol: 'A$', locale: 'en-AU', decimals: 2 },
-    THB: { code: 'THB', symbol: '฿', locale: 'th-TH', decimals: 2 }
-}
-
-// Default currency from localStorage or config
-const defaultCurrency = ref<string>('IDR')
+// Global state for currency settings (singleton)
+const currencyConfig = ref<CurrencyConfig>({
+    code: 'IDR',
+    symbol: 'Rp',
+    position: 'before',
+    thousandSeparator: '.',
+    decimalSeparator: ',',
+    decimals: 0
+})
+const isLoaded = ref(false)
 
 export const useCurrency = () => {
     const authStore = useAuthStore()
 
-    // Get currency from user settings or localStorage
-    const currencyCode = computed(() => {
-        // Check localStorage first (set in config)
-        if (process.client) {
-            const saved = localStorage.getItem('erp_currency')
-            if (saved && currencyConfigs[saved]) {
-                return saved
-            }
-        }
-        return defaultCurrency.value
-    })
+    // Load settings from API
+    const loadSettings = async () => {
+        if (isLoaded.value || !authStore.token) return
 
-    const config = computed<CurrencyConfig>(() => {
-        return currencyConfigs[currencyCode.value] || currencyConfigs.IDR
-    })
+        try {
+            const response = await $fetch('/api/settings', {
+                headers: { Authorization: `Bearer ${authStore.token}` }
+            }) as any
+
+            if (response) {
+                currencyConfig.value = {
+                    code: response.currency_code || 'IDR',
+                    symbol: response.currency_symbol || 'Rp',
+                    position: response.currency_position || 'before',
+                    thousandSeparator: response.thousand_separator || '.',
+                    decimalSeparator: response.decimal_separator || ',',
+                    decimals: parseInt(response.decimal_places) || 0
+                }
+                isLoaded.value = true
+            }
+        } catch (e) {
+            console.error('Failed to load currency settings', e)
+        }
+    }
 
     // Format number to currency display
     const formatCurrency = (value: number | null | undefined): string => {
         if (value === null || value === undefined) return '-'
-        const cfg = config.value
-        return `${cfg.symbol} ${new Intl.NumberFormat(cfg.locale, {
-            minimumFractionDigits: cfg.decimals,
-            maximumFractionDigits: cfg.decimals
-        }).format(value)}`
+
+        const cfg = currencyConfig.value
+
+        // Format with decimals
+        let formatted = value.toFixed(cfg.decimals)
+
+        // Split into parts
+        const parts = formatted.split('.')
+
+        // Add thousand separators
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, cfg.thousandSeparator)
+
+        // Join with decimal separator
+        formatted = cfg.decimals > 0 ? parts.join(cfg.decimalSeparator) : parts[0]
+
+        // Apply position
+        return cfg.position === 'before'
+            ? `${cfg.symbol} ${formatted}`
+            : `${formatted} ${cfg.symbol}`
     }
 
     // Format number only (without symbol)
     const formatNumber = (value: number | null | undefined): string => {
         if (value === null || value === undefined) return '0'
-        const cfg = config.value
-        return new Intl.NumberFormat(cfg.locale, {
-            minimumFractionDigits: cfg.decimals,
-            maximumFractionDigits: cfg.decimals
-        }).format(value)
+
+        const cfg = currencyConfig.value
+        let formatted = value.toFixed(cfg.decimals)
+        const parts = formatted.split('.')
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, cfg.thousandSeparator)
+        return cfg.decimals > 0 ? parts.join(cfg.decimalSeparator) : parts[0]
     }
 
-    // Set currency preference
-    const setCurrency = (code: string) => {
-        if (currencyConfigs[code]) {
-            defaultCurrency.value = code
-            if (process.client) {
-                localStorage.setItem('erp_currency', code)
-            }
-        }
+    // Re-fetch settings when needed
+    const reloadSettings = () => {
+        isLoaded.value = false
+        return loadSettings()
     }
-
-    // Get all available currencies
-    const availableCurrencies = computed(() => {
-        return Object.entries(currencyConfigs).map(([code, cfg]) => ({
-            label: `${cfg.symbol} - ${code}`,
-            value: code
-        }))
-    })
 
     return {
-        currencyCode,
-        config,
+        config: currencyConfig,
         formatCurrency,
         formatNumber,
-        setCurrency,
-        availableCurrencies
+        loadSettings,
+        reloadSettings,
+        isLoaded
     }
 }

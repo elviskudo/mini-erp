@@ -1,4 +1,4 @@
-from passlib.context import CryptContext
+import bcrypt as bcrypt_lib
 import os
 from datetime import datetime, timedelta
 from typing import Optional
@@ -16,14 +16,16 @@ SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey123")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    # Use bcrypt directly to avoid passlib compatibility issues
+    return bcrypt_lib.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    # Use bcrypt directly to avoid passlib compatibility issues
+    return bcrypt_lib.hashpw(password.encode('utf-8'), bcrypt_lib.gensalt()).decode('utf-8')
 
 async def authenticate_user(db: AsyncSession, username: str, password: str):
     """Authenticate user by username/email and password"""

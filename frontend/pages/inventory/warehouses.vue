@@ -24,13 +24,14 @@
       v-model="isOpen" 
       :title="editMode ? 'Edit Warehouse' : 'Add Warehouse'"
       :loading="submitting"
+      :disabled="!isFormValid"
       @submit="createWarehouse"
     >
       <div class="space-y-4">
-        <UFormGroup label="Name" name="name" required>
+        <UFormGroup label="Warehouse Name" name="name" required hint="Unique warehouse identifier" :ui="{ hint: 'text-xs text-gray-400' }">
           <UInput v-model="form.name" placeholder="e.g. Central Warehouse" />
         </UFormGroup>
-        <UFormGroup label="Address" name="address">
+        <UFormGroup label="Address" name="address" required hint="Physical location address" :ui="{ hint: 'text-xs text-gray-400' }">
           <UTextarea v-model="form.address" placeholder="e.g. 123 Industrial Park" rows="3" />
         </UFormGroup>
       </div>
@@ -110,6 +111,11 @@ const columns = [
 
 const form = reactive({ id: '', name: '', address: '' })
 const locForm = reactive({ name: '', code: '', type: 'Storage' })
+
+// Form validation - button enabled only when required fields are filled
+const isFormValid = computed(() => {
+    return form.name.trim() !== '' && form.address.trim() !== ''
+})
 
 const fetchWarehouses = async () => {
     loading.value = true

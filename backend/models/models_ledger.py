@@ -8,11 +8,10 @@ from database import Base
 
 
 class MovementType(str, enum.Enum):
-    IN_RECEIPT = "In Receipt"
-    OUT_ISSUE = "Out Issue"
+    INBOUND = "Inbound"
+    OUTBOUND = "Outbound"
     TRANSFER = "Transfer"
     ADJUSTMENT = "Adjustment"
-    OUT_DELIVERY = "Out Delivery"
 
 
 class StockMovement(Base):
@@ -29,6 +28,7 @@ class StockMovement(Base):
     
     reference_id = Column(String, nullable=True)  # e.g. PO Number, SO Number
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     
     notes = Column(String, nullable=True)
@@ -36,3 +36,5 @@ class StockMovement(Base):
     product = relationship("Product")
     batch = relationship("InventoryBatch")
     location = relationship("Location")
+    user = relationship("User", foreign_keys=[created_by])
+

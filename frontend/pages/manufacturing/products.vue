@@ -5,7 +5,12 @@
         <h2 class="text-xl font-semibold text-gray-900">Products & BOM</h2>
         <p class="text-gray-500">Manage products and bill of materials</p>
       </div>
-      <UButton icon="i-heroicons-plus" @click="openCreate">Add Product</UButton>
+      <div class="flex gap-2">
+        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData('csv')">CSV</UButton>
+        <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" @click="exportData('xlsx')">XLS</UButton>
+        <UButton icon="i-heroicons-document" variant="outline" size="sm" @click="exportData('pdf')">PDF</UButton>
+        <UButton icon="i-heroicons-plus" @click="openCreate">Add Product</UButton>
+      </div>
     </div>
 
     <UCard :ui="{ body: { padding: 'p-4' } }">
@@ -50,6 +55,7 @@
       v-model="isOpen" 
       :title="editMode ? 'Edit Product' : 'Add Product'"
       :loading="submitting"
+      :disabled="!isFormValid"
       @submit="saveProduct"
     >
       <div class="space-y-4">
@@ -283,6 +289,11 @@ const form = reactive({
   bom_items: [] as any[]
 })
 
+// Form validation - button enabled only when required fields are filled
+const isFormValid = computed(() => {
+  return form.code.trim() !== '' && form.name.trim() !== '' && form.type !== ''
+})
+
 const imagePreview = ref<string | null>(null)
 const imageFile = ref<File | null>(null)
 const isDragging = ref(false)
@@ -482,6 +493,27 @@ const deleteProduct = async () => {
     toast.add({ title: 'Error', description: 'Failed to delete product.', color: 'red' })
   } finally {
     deleting.value = false
+  }
+}
+
+const exportData = async (format: string) => {
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const res = await $fetch(`/api/export/products?format=${format}`, { 
+      headers,
+      responseType: 'blob'
+    })
+    
+    const blob = res as Blob
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `products_${new Date().toISOString().split('T')[0]}.${format}`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    toast.add({ title: 'Exported', description: `Data exported to ${format.toUpperCase()}`, color: 'green' })
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to export data', color: 'red' })
   }
 }
 

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from sqlalchemy import func
+from typing import List, Optional
 from io import BytesIO
 from datetime import datetime
 import uuid
@@ -12,6 +13,7 @@ import models
 from models import models_procurement
 import schemas
 from services.pdf_service import generate_po_pdf, generate_simple_pdf
+from auth import get_current_user
 
 router = APIRouter(
     prefix="/procurement",
@@ -19,9 +21,59 @@ router = APIRouter(
 )
 
 # Vendor Endpoints
-@router.post("/vendors", response_model=schemas.POResponse) 
-async def create_vendor(vendor: schemas.VendorCreate, db: AsyncSession = Depends(database.get_db)):
-    new_vendor = models.Vendor(**vendor.dict())
+@router.post("/vendors")
+async def create_vendor(
+    vendor: schemas.VendorCreate, 
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Generate vendor code
+    count_result = await db.execute(
+        select(func.count(models.Vendor.id)).where(
+            models.Vendor.tenant_id == current_user.tenant_id
+        )
+    )
+    count = count_result.scalar() or 0
+    vendor_code = vendor.code if vendor.code else f"V-{count + 1:04d}"
+    
+    # Convert string values to proper Enum types
+    rating_val = models_procurement.VendorRating.B
+    if vendor.rating:
+        for r in models_procurement.VendorRating:
+            if r.value == vendor.rating or r.name == vendor.rating:
+                rating_val = r
+                break
+    
+    category_val = models_procurement.VendorCategory.RAW_MATERIAL
+    if vendor.category:
+        for c in models_procurement.VendorCategory:
+            if c.value == vendor.category or c.name == vendor.category:
+                category_val = c
+                break
+    
+    payment_term_val = models_procurement.PaymentTerm.NET_30
+    if vendor.payment_term:
+        for p in models_procurement.PaymentTerm:
+            if p.value == vendor.payment_term or p.name == vendor.payment_term:
+                payment_term_val = p
+                break
+    
+    new_vendor = models.Vendor(
+        tenant_id=current_user.tenant_id,
+        code=vendor_code,
+        name=vendor.name,
+        email=vendor.email,
+        phone=vendor.phone,
+        address=vendor.address,
+        rating=rating_val,
+        category=category_val,
+        payment_term=payment_term_val,
+        credit_limit=vendor.credit_limit if vendor.credit_limit else 0.0
+        # NOTE: latitude/longitude temporarily disabled - run migration first:
+        # alembic revision --autogenerate -m "Add vendor lat lng"
+        # alembic upgrade head
+    )
+    
     db.add(new_vendor)
     try:
         await db.commit()
@@ -29,51 +81,239 @@ async def create_vendor(vendor: schemas.VendorCreate, db: AsyncSession = Depends
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    return {"id": new_vendor.id, "status": "Active", "vendor_id": new_vendor.id}
+    return new_vendor
 
-@router.get("/vendors", response_model=List[schemas.POResponse]) 
-async def list_vendors(db: AsyncSession = Depends(database.get_db)):
-    result = await db.execute(select(models.Vendor))
+@router.get("/vendors")
+async def list_vendors(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(models.Vendor).where(models.Vendor.tenant_id == current_user.tenant_id)
+    )
     return result.scalars().all()
 
-@router.get("/pr", response_model=List[schemas.PRResponse])
-async def list_prs(db: AsyncSession = Depends(database.get_db)):
-    query = select(models.PurchaseRequest).options(selectinload(models.PurchaseRequest.items).selectinload(models.PRLine.product))
+@router.get("/pr")
+async def list_prs(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    query = select(models.PurchaseRequest).where(
+        models.PurchaseRequest.tenant_id == current_user.tenant_id
+    ).options(selectinload(models.PurchaseRequest.items).selectinload(models.PRLine.product))
     result = await db.execute(query)
     return result.scalars().all()
 
+@router.get("/stock/{product_id}")
+async def get_product_stock(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get available stock for a product with warehouse breakdown"""
+    from models.models_receiving import InventoryBatch
+    from models.models_inventory import Warehouse, Location
+    
+    # Get stock breakdown by warehouse
+    stock_result = await db.execute(
+        select(
+            InventoryBatch.location_id,
+            func.sum(InventoryBatch.quantity_on_hand).label('qty')
+        ).where(
+            InventoryBatch.product_id == product_id,
+            InventoryBatch.tenant_id == current_user.tenant_id
+        ).group_by(InventoryBatch.location_id)
+    )
+    stock_rows = stock_result.all()
+    
+    # Get warehouse info for each location
+    warehouses_stock = []
+    total_stock = 0
+    for row in stock_rows:
+        if row.location_id:
+            location = await db.get(Location, row.location_id)
+            warehouse = await db.get(Warehouse, location.warehouse_id) if location else None
+            warehouses_stock.append({
+                "warehouse_name": warehouse.name if warehouse else "Unknown",
+                "location_code": location.code if location else "Unknown",
+                "quantity": float(row.qty or 0)
+            })
+            total_stock += float(row.qty or 0)
+    
+    return {
+        "product_id": str(product_id), 
+        "available_stock": total_stock,
+        "warehouses": warehouses_stock
+    }
+
 # PR Endpoints
 @router.post("/pr", response_model=schemas.PRResponse)
-async def create_pr(pr: schemas.PRCreate, db: AsyncSession = Depends(database.get_db)):
-    new_pr = models.PurchaseRequest()
+async def create_pr(
+    pr: schemas.PRCreate, 
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Generate PR number
+    count_result = await db.execute(
+        select(func.count(models.PurchaseRequest.id)).where(
+            models.PurchaseRequest.tenant_id == current_user.tenant_id
+        )
+    )
+    count = count_result.scalar() or 0
+    pr_number = f"PR-{datetime.now().strftime('%Y%m')}-{count + 1:04d}"
+    
+    # Import InventoryBatch for stock check
+    from models.models_receiving import InventoryBatch
+    
+    # Validate - check that requested products exist and qty doesn't exceed stock
+    for item in pr.items:
+        product = await db.get(models.Product, item.product_id)
+        if not product:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Product {item.product_id} not found"
+            )
+        
+        # Get current stock for this product
+        stock_result = await db.execute(
+            select(func.coalesce(func.sum(InventoryBatch.quantity_on_hand), 0)).where(
+                InventoryBatch.product_id == item.product_id,
+                InventoryBatch.tenant_id == current_user.tenant_id
+            )
+        )
+        current_stock = stock_result.scalar() or 0
+        
+        # Qty requested cannot exceed available stock
+        if item.quantity > current_stock:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Qty ({item.quantity}) untuk produk '{product.name}' melebihi stok tersedia ({current_stock})"
+            )
+    
+    new_pr = models.PurchaseRequest(
+        tenant_id=current_user.tenant_id,
+        pr_number=pr_number,
+        requester_id=current_user.id,
+        department=pr.department if hasattr(pr, 'department') else None,
+        required_date=pr.required_date if hasattr(pr, 'required_date') else None,
+        notes=pr.notes if hasattr(pr, 'notes') else None,
+        status=models.PRStatus.DRAFT
+    )
     db.add(new_pr)
     await db.flush()
 
     for item in pr.items:
         line = models.PRLine(
+            tenant_id=current_user.tenant_id,
             pr_id=new_pr.id,
             product_id=item.product_id,
-            quantity=item.quantity
+            quantity=item.quantity,
+            estimated_price=item.estimated_price if hasattr(item, 'estimated_price') else 0.0
         )
         db.add(line)
+        
+        # Deduct stock from InventoryBatch (FIFO - oldest batches first)
+        remaining_qty = item.quantity
+        batch_result = await db.execute(
+            select(InventoryBatch).where(
+                InventoryBatch.product_id == item.product_id,
+                InventoryBatch.tenant_id == current_user.tenant_id,
+                InventoryBatch.quantity_on_hand > 0
+            ).order_by(InventoryBatch.id)  # FIFO order
+        )
+        batches = batch_result.scalars().all()
+        
+        for batch in batches:
+            if remaining_qty <= 0:
+                break
+            deduct = min(batch.quantity_on_hand, remaining_qty)
+            batch.quantity_on_hand -= deduct
+            remaining_qty -= deduct
     
     await db.commit()
     await db.refresh(new_pr)
     return new_pr
 
 @router.post("/pr/{pr_id}/approve")
-async def approve_pr(pr_id: uuid.UUID, db: AsyncSession = Depends(database.get_db)):
+async def approve_pr(
+    pr_id: uuid.UUID, 
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     pr = await db.get(models.PurchaseRequest, pr_id)
     if not pr:
         raise HTTPException(status_code=404, detail="PR not found")
     
+    # Get the requester (creator of the PR)
+    requester = await db.get(models.User, pr.requester_id)
+    if not requester:
+        raise HTTPException(status_code=404, detail="PR requester not found")
+    
+    # Check approval rules - but ADMIN can always approve
+    approver_role = current_user.role.value
+    requester_role = requester.role.value
+    
+    if approver_role != "ADMIN":
+        # Check if there's an approval rule allowing this approver to approve this requester
+        from models.models_approval import ApprovalRule
+        rule_query = select(ApprovalRule).where(
+            ApprovalRule.tenant_id == current_user.tenant_id,
+            ApprovalRule.requester_role == requester_role,
+            ApprovalRule.approver_role == approver_role
+        )
+        rule_result = await db.execute(rule_query)
+        rule = rule_result.scalar_one_or_none()
+        
+        if not rule:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Your role ({approver_role}) is not authorized to approve requests from {requester_role}"
+            )
+    
+    # Cannot approve own request (unless ADMIN)
+    if pr.requester_id == current_user.id and approver_role != "ADMIN":
+        raise HTTPException(status_code=403, detail="You cannot approve your own request")
+    
     pr.status = models.PRStatus.APPROVED
+    pr.approved_by = current_user.id
+    pr.approved_at = datetime.now()
     await db.commit()
-    return {"status": "Approved"}
+    return {"status": "Approved", "approved_by": str(current_user.id), "approved_at": pr.approved_at.isoformat()}
+
+@router.post("/pr/{pr_id}/reject")
+async def reject_pr(
+    pr_id: uuid.UUID,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    pr = await db.get(models.PurchaseRequest, pr_id)
+    if not pr:
+        raise HTTPException(status_code=404, detail="PR not found")
+    
+    reason = payload.get("reason", "")
+    if not reason:
+        raise HTTPException(status_code=400, detail="Reason is required")
+    
+    pr.status = models.PRStatus.REJECTED
+    pr.rejected_by = current_user.id
+    pr.rejected_at = datetime.now()
+    pr.reject_reason = reason
+    await db.commit()
+    return {
+        "status": "Rejected", 
+        "rejected_by": str(current_user.id), 
+        "rejected_at": pr.rejected_at.isoformat(),
+        "reason": reason
+    }
 
 # PO Endpoints
 @router.post("/po/create_from_pr", response_model=schemas.POResponse)
-async def convert_pr_to_po(payload: schemas.POCreateFromPR, db: AsyncSession = Depends(database.get_db)):
+async def convert_pr_to_po(
+    payload: schemas.POCreateFromPR, 
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     # 1. Fetch PR
     query = select(models_procurement.PurchaseRequest)\
         .where(models_procurement.PurchaseRequest.id == payload.pr_id)\
@@ -86,19 +326,31 @@ async def convert_pr_to_po(payload: schemas.POCreateFromPR, db: AsyncSession = D
     if pr.status != models_procurement.PRStatus.APPROVED:
         raise HTTPException(status_code=400, detail="PR must be approved")
 
-    # 2. Create PO
-    new_po = models.PurchaseOrder(
+    # 2. Generate PO number
+    count_result = await db.execute(
+        select(func.count(models_procurement.PurchaseOrder.id)).where(
+            models_procurement.PurchaseOrder.tenant_id == current_user.tenant_id
+        )
+    )
+    count = count_result.scalar() or 0
+    po_number = f"PO-{count + 1:05d}"
+
+    # 3. Create PO
+    new_po = models_procurement.PurchaseOrder(
+        tenant_id=current_user.tenant_id,
+        po_number=po_number,
         vendor_id=payload.vendor_id,
         pr_id=pr.id,
-        status=models.POStatus.DRAFT
+        status=models_procurement.POStatus.DRAFT
     )
     db.add(new_po)
     await db.flush()
 
-    # 3. Copy items
+    # 4. Copy items
     for item in pr.items:
         price = payload.price_map.get(str(item.product_id), 0.0)
-        po_line = models.POLine(
+        po_line = models_procurement.POLine(
+            tenant_id=current_user.tenant_id,
             po_id=new_po.id,
             product_id=item.product_id,
             quantity=item.quantity,
@@ -106,7 +358,7 @@ async def convert_pr_to_po(payload: schemas.POCreateFromPR, db: AsyncSession = D
         )
         db.add(po_line)
     
-    # 4. Update PR
+    # 5. Update PR status
     pr.status = models_procurement.PRStatus.CONVERTED
     
     await db.commit()
@@ -169,9 +421,17 @@ async def create_purchase_order(
     
     return db_order
 
-@router.get("/orders", response_model=List[schemas.POResponse])
-async def list_pos(db: AsyncSession = Depends(database.get_db)):
-    query = select(models.PurchaseOrder).options(selectinload(models.PurchaseOrder.vendor), selectinload(models.PurchaseOrder.items).selectinload(models.POLine.product))
+@router.get("/orders")
+async def list_pos(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    query = select(models_procurement.PurchaseOrder).where(
+        models_procurement.PurchaseOrder.tenant_id == current_user.tenant_id
+    ).options(
+        selectinload(models_procurement.PurchaseOrder.vendor),
+        selectinload(models_procurement.PurchaseOrder.items).selectinload(models_procurement.POLine.product)
+    ).order_by(models_procurement.PurchaseOrder.created_at.desc())
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -183,11 +443,11 @@ async def download_po_pdf(
 ):
     """Generate and download PO as PDF"""
     # Get PO with vendor and items
-    query = select(models.PurchaseOrder)\
-        .where(models.PurchaseOrder.id == order_id)\
+    query = select(models_procurement.PurchaseOrder)\
+        .where(models_procurement.PurchaseOrder.id == order_id)\
         .options(
-            selectinload(models.PurchaseOrder.vendor),
-            selectinload(models.PurchaseOrder.items).selectinload(models.POLine.product)
+            selectinload(models_procurement.PurchaseOrder.vendor),
+            selectinload(models_procurement.PurchaseOrder.items).selectinload(models_procurement.POLine.product)
         )
     result = await db.execute(query)
     po = result.scalar_one_or_none()
@@ -250,20 +510,34 @@ async def download_po_pdf(
 @router.post("/orders/{order_id}/send")
 async def send_po_to_vendor(
     order_id: str,
-    db: AsyncSession = Depends(database.get_db)
+    payload: Optional[dict] = Body(default=None),
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """Send PO to vendor - changes status from Draft to Open"""
-    result = await db.execute(select(models.PurchaseOrder).where(models.PurchaseOrder.id == order_id))
-    po = result.scalar_one_or_none()
-    if not po:
-        raise HTTPException(status_code=404, detail="PO not found")
-    
-    if po.status != models.POStatus.DRAFT:
-        raise HTTPException(status_code=400, detail="PO must be in Draft status")
-    
-    po.status = models.POStatus.OPEN
-    await db.commit()
-    return {"message": "PO sent to vendor", "status": "Open"}
+    try:
+        result = await db.execute(
+            select(models_procurement.PurchaseOrder).where(
+                models_procurement.PurchaseOrder.id == order_id
+            )
+        )
+        po = result.scalar_one_or_none()
+        if not po:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        if po.status != models_procurement.POStatus.DRAFT:
+            raise HTTPException(status_code=400, detail=f"PO must be in Draft status, current status: {po.status}")
+        
+        po.status = models_procurement.POStatus.OPEN
+        # Save notes if provided
+        if payload and payload.get('notes'):
+            po.notes = payload.get('notes')
+        await db.commit()
+        return {"message": "PO sent to vendor", "status": "Open"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error sending PO: {str(e)}")
 
 
 @router.post("/orders/{order_id}/receive")

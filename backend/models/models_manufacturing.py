@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Integer, Enum, DateTime
+from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Integer, Enum, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -33,12 +33,13 @@ class Product(Base):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     code = Column(String, index=True, nullable=False)
     name = Column(String, nullable=False)
+    description = Column(String, nullable=True)  # Product description
     type = Column(Enum(ProductType), default=ProductType.RAW_MATERIAL)
     uom = Column(String, default="pcs")  # Unit of Measure
     
     # Product origin
     is_manufactured = Column(Boolean, default=True)  # False = purchased externally
-    image_url = Column(String, nullable=True)
+    image_url = Column(Text, nullable=True)  # Base64 or URL for product image
     
     # Cost & Pricing
     standard_cost = Column(Float, default=0.0)

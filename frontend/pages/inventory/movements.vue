@@ -5,9 +5,20 @@
         <h1 class="text-2xl font-bold text-gray-900">Stock Movements</h1>
         <p class="text-gray-500">Track inventory movements history</p>
       </div>
-      <UButton icon="i-heroicons-arrow-path" variant="outline" @click="refreshData">
-        Refresh
-      </UButton>
+      <div class="flex gap-2">
+        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData('csv')">
+          CSV
+        </UButton>
+        <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" @click="exportData('xlsx')">
+          XLS
+        </UButton>
+        <UButton icon="i-heroicons-document" variant="outline" size="sm" @click="exportData('pdf')">
+          PDF
+        </UButton>
+        <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="refreshData">
+          Refresh
+        </UButton>
+      </div>
     </div>
 
     <!-- Summary Cards -->
@@ -60,11 +71,15 @@
 
     <!-- Filters -->
     <UCard>
-      <div class="flex flex-col sm:flex-row gap-4">
-        <UInput v-model="search" placeholder="Search by item or reference..." icon="i-heroicons-magnifying-glass" class="flex-1" />
-        <USelect v-model="typeFilter" :options="typeOptions" placeholder="All Types" class="w-full sm:w-40" />
-        <UInput v-model="dateFrom" type="date" class="w-full sm:w-40" />
-        <UInput v-model="dateTo" type="date" class="w-full sm:w-40" />
+      <div class="flex flex-col sm:flex-row gap-4 flex-wrap">
+        <UInput v-model="search" placeholder="Search by item or reference..." icon="i-heroicons-magnifying-glass" class="flex-1 min-w-[200px]" />
+        <USelectMenu v-model="filters.type" :options="typeOptions" placeholder="All Types" class="w-full sm:w-40" />
+        <USelectMenu v-model="filters.warehouse" :options="warehouseOptions" placeholder="All Warehouses" class="w-full sm:w-48" />
+        <UInput v-model="filters.dateFrom" type="date" class="w-full sm:w-40" placeholder="From" />
+        <UInput v-model="filters.dateTo" type="date" class="w-full sm:w-40" placeholder="To" />
+        <USelectMenu v-model="filters.limit" :options="limitOptions" class="w-full sm:w-24" />
+        <UButton icon="i-heroicons-funnel" @click="applyFilters">Filter</UButton>
+        <UButton variant="ghost" @click="resetFilters">Reset</UButton>
       </div>
     </UCard>
 
@@ -92,30 +107,40 @@
       
       <!-- Pagination -->
       <div class="flex items-center justify-between px-4 py-3 border-t">
-        <p class="text-sm text-gray-500">Showing {{ filteredMovements.length }} movements</p>
-        <UPagination v-model="page" :total="movements.length" :page-count="20" />
+        <p class="text-sm text-gray-500">Showing {{ movements.length }} of {{ total }} movements</p>
+        <UPagination v-model="page" :total="total" :page-count="filters.limit" @update:modelValue="changePage" />
       </div>
     </UCard>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
 definePageMeta({
   middleware: 'auth'
 })
 
+const authStore = useAuthStore()
+const toast = useToast()
 const loading = ref(false)
 const search = ref('')
-const typeFilter = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
 const page = ref(1)
+const total = ref(0)
 
 const stats = reactive({
-  inbound: 156,
-  outbound: 98,
-  transfer: 23,
-  adjustment: 12
+  inbound: 0,
+  outbound: 0,
+  transfer: 0,
+  adjustment: 0
+})
+
+const filters = reactive({
+  type: '',
+  warehouse: '',
+  dateFrom: '',
+  dateTo: '',
+  limit: 20
 })
 
 const typeOptions = [
@@ -125,6 +150,15 @@ const typeOptions = [
   { label: 'Transfer', value: 'Transfer' },
   { label: 'Adjustment', value: 'Adjustment' }
 ]
+
+const limitOptions = [
+  { label: '10', value: 10 },
+  { label: '20', value: 20 },
+  { label: '50', value: 50 },
+  { label: '100', value: 100 }
+]
+
+const warehouseOptions = ref([{ label: 'All Warehouses', value: '' }])
 
 const columns = [
   { key: 'reference', label: 'Reference' },
@@ -136,22 +170,13 @@ const columns = [
   { key: 'user', label: 'By' }
 ]
 
-const movements = ref([
-  { id: 1, reference: 'GR-001', type: 'Inbound', item: 'Raw Material A', quantity: 500, warehouse: 'Main Warehouse', timestamp: '2024-01-15T09:30:00', user: 'John' },
-  { id: 2, reference: 'DO-045', type: 'Outbound', item: 'Widget A', quantity: -100, warehouse: 'Main Warehouse', timestamp: '2024-01-15T10:15:00', user: 'Jane' },
-  { id: 3, reference: 'TR-012', type: 'Transfer', item: 'Component X', quantity: 50, warehouse: 'WH-2 → WH-1', timestamp: '2024-01-15T11:00:00', user: 'Bob' },
-  { id: 4, reference: 'ADJ-003', type: 'Adjustment', item: 'Screw M5', quantity: -25, warehouse: 'Main Warehouse', timestamp: '2024-01-14T16:45:00', user: 'Admin' },
-  { id: 5, reference: 'GR-002', type: 'Inbound', item: 'Packaging Box', quantity: 1000, warehouse: 'Main Warehouse', timestamp: '2024-01-14T14:20:00', user: 'John' },
-  { id: 6, reference: 'DO-046', type: 'Outbound', item: 'Widget B', quantity: -75, warehouse: 'Secondary WH', timestamp: '2024-01-14T13:00:00', user: 'Jane' }
-])
+const movements = ref<any[]>([])
 
 const filteredMovements = computed(() => {
-  return movements.value.filter(m => {
-    const matchSearch = !search.value || 
-      m.item.toLowerCase().includes(search.value.toLowerCase()) ||
-      m.reference.toLowerCase().includes(search.value.toLowerCase())
-    const matchType = !typeFilter.value || m.type === typeFilter.value
-    return matchSearch && matchType
+  if (!search.value) return movements.value
+  return movements.value.filter((m: any) => {
+    return m.item?.toLowerCase().includes(search.value.toLowerCase()) ||
+      m.reference?.toLowerCase().includes(search.value.toLowerCase())
   })
 })
 
@@ -176,15 +201,106 @@ const getTypeColor = (type: string) => {
 }
 
 const formatDate = (timestamp: string) => {
+  if (!timestamp) return '-'
   return new Date(timestamp).toLocaleDateString()
 }
 
 const formatTime = (timestamp: string) => {
+  if (!timestamp) return ''
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-const refreshData = () => {
-  loading.value = true
-  setTimeout(() => loading.value = false, 1000)
+const fetchWarehouses = async () => {
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const res: any = await $fetch('/api/inventory/warehouses', { headers })
+    warehouseOptions.value = [
+      { label: 'All Warehouses', value: '' },
+      ...res.map((w: any) => ({ label: w.name, value: w.id }))
+    ]
+  } catch (e) {
+    console.error('Failed to fetch warehouses', e)
+  }
 }
+
+const refreshData = async () => {
+  loading.value = true
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    
+    const params = new URLSearchParams()
+    if (filters.type) params.append('movement_type', filters.type)
+    if (filters.warehouse) params.append('warehouse_id', filters.warehouse)
+    if (filters.dateFrom) params.append('date_from', new Date(filters.dateFrom).toISOString())
+    if (filters.dateTo) params.append('date_to', new Date(filters.dateTo + 'T23:59:59').toISOString())
+    params.append('limit', String(filters.limit))
+    params.append('offset', String((page.value - 1) * filters.limit))
+    
+    const res: any = await $fetch(`/api/inventory/movements?${params.toString()}`, { headers })
+    movements.value = res.movements
+    total.value = res.total
+    stats.inbound = res.stats.inbound
+    stats.outbound = res.stats.outbound
+    stats.transfer = res.stats.transfer
+    stats.adjustment = res.stats.adjustment
+  } catch (e) {
+    console.error('Failed to fetch movements', e)
+  } finally {
+    loading.value = false
+  }
+}
+
+const applyFilters = () => {
+  page.value = 1
+  refreshData()
+}
+
+const resetFilters = () => {
+  filters.type = ''
+  filters.warehouse = ''
+  filters.dateFrom = ''
+  filters.dateTo = ''
+  filters.limit = 20
+  page.value = 1
+  search.value = ''
+  refreshData()
+}
+
+const changePage = (newPage: number) => {
+  page.value = newPage
+  refreshData()
+}
+
+const exportData = async (format: string) => {
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const params = new URLSearchParams()
+    if (filters.type) params.append('movement_type', filters.type)
+    if (filters.warehouse) params.append('warehouse_id', filters.warehouse)
+    if (filters.dateFrom) params.append('date_from', new Date(filters.dateFrom).toISOString())
+    if (filters.dateTo) params.append('date_to', new Date(filters.dateTo + 'T23:59:59').toISOString())
+    params.append('format', format)
+    
+    const res = await $fetch(`/api/export/movements?${params.toString()}`, { 
+      headers,
+      responseType: 'blob'
+    })
+    
+    const blob = res as Blob
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `movements_${new Date().toISOString().split('T')[0]}.${format}`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    toast.add({ title: 'Exported', description: `Data exported to ${format.toUpperCase()}`, color: 'green' })
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to export data', color: 'red' })
+  }
+}
+
+onMounted(() => {
+  fetchWarehouses()
+  refreshData()
+})
 </script>

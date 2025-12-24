@@ -24,40 +24,41 @@
       v-model="isOpen" 
       :title="editMode ? 'Edit Employee' : 'Add Employee'"
       :loading="saving"
+      :disabled="!isFormValid"
       @submit="onSubmit"
     >
       <div class="space-y-4">
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="First Name" required>
-            <UInput v-model="form.first_name" />
+          <UFormGroup label="First Name" required hint="Legal first name" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.first_name" placeholder="e.g. John" />
           </UFormGroup>
-          <UFormGroup label="Last Name" required>
-            <UInput v-model="form.last_name" />
-          </UFormGroup>
-        </div>
-        
-        <UFormGroup label="Email" required>
-          <UInput v-model="form.email" type="email" />
-        </UFormGroup>
-        
-        <UFormGroup label="Phone">
-          <UInput v-model="form.phone" />
-        </UFormGroup>
-        
-        <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Department">
-            <UInput v-model="form.department" />
-          </UFormGroup>
-          <UFormGroup label="Job Title">
-            <UInput v-model="form.job_title" />
+          <UFormGroup label="Last Name" required hint="Legal last name" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.last_name" placeholder="e.g. Smith" />
           </UFormGroup>
         </div>
         
+        <UFormGroup label="Email" required hint="Work email address" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UInput v-model="form.email" type="email" placeholder="e.g. john@company.com" />
+        </UFormGroup>
+        
+        <UFormGroup label="Phone" required hint="Contact phone number" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UInput v-model="form.phone" placeholder="e.g. +62 812 3456 7890" />
+        </UFormGroup>
+        
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Base Salary">
+          <UFormGroup label="Department" required hint="Assigned department" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.department" placeholder="e.g. IT" />
+          </UFormGroup>
+          <UFormGroup label="Job Title" required hint="Official position" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.job_title" placeholder="e.g. Developer" />
+          </UFormGroup>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Base Salary" required hint="Monthly salary (IDR)" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.base_salary" type="number" />
           </UFormGroup>
-          <UFormGroup label="Hire Date">
+          <UFormGroup label="Hire Date" required hint="Employment start date" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.hire_date" type="date" />
           </UFormGroup>
         </div>
@@ -88,6 +89,18 @@ const form = reactive({
     job_title: '',
     base_salary: 5000000,
     hire_date: new Date().toISOString().split('T')[0]
+})
+
+// Form validation - button enabled only when all required fields are filled
+const isFormValid = computed(() => {
+    return form.first_name.trim() !== '' && 
+           form.last_name.trim() !== '' && 
+           form.email.trim() !== '' &&
+           form.phone.trim() !== '' &&
+           form.department.trim() !== '' &&
+           form.job_title.trim() !== '' &&
+           form.base_salary > 0 &&
+           form.hire_date !== ''
 })
 
 const columns = [

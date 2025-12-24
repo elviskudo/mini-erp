@@ -52,28 +52,29 @@
       v-model="isOpen" 
       :title="editMode ? 'Edit Work Center' : 'Add Work Center'"
       :loading="submitting"
+      :disabled="!isFormValid"
       @submit="saveWorkCenter"
     >
       <div class="space-y-4">
-        <UFormGroup label="Name" required hint="Display name for this work center" :ui="{ hint: 'text-xs text-gray-400' }">
+        <UFormGroup label="Name" required hint="Display name for this work center" :ui="{ hint: 'text-xs text-gray-400 text-right' }">
           <UInput v-model="form.name" placeholder="e.g. Assembly Line 1" />
         </UFormGroup>
         
-        <UFormGroup label="Code" required hint="Unique identifier code for internal reference" :ui="{ hint: 'text-xs text-gray-400' }">
+        <UFormGroup label="Code" required hint="Unique identifier code for internal reference" :ui="{ hint: 'text-xs text-gray-400 text-right' }">
           <UInput v-model="form.code" placeholder="e.g. WC-001" />
         </UFormGroup>
 
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Hourly Rate" hint="Cost per hour for labor" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UFormGroup label="Hourly Rate" hint="Cost per hour for labor" :ui="{ hint: 'text-xs text-gray-400 text-right' }">
             <CurrencyInput v-model="form.cost_per_hour" :currency="currencyCode" />
           </UFormGroup>
-          <UFormGroup label="Capacity (Hrs/Day)" hint="Max productive hours/day" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UFormGroup label="Capacity (Hrs/Day)" hint="Max productive hours/day" :ui="{ hint: 'text-xs text-gray-400 text-right' }">
             <UInput v-model="form.capacity_hours" type="number" step="0.1" />
           </UFormGroup>
         </div>
         
         <!-- Map Location Picker -->
-        <UFormGroup label="Location" hint="Click map to set GPS coordinates" :ui="{ hint: 'text-xs text-gray-400' }">
+        <UFormGroup label="Location" hint="Click map to set GPS coordinates" :ui="{ hint: 'text-xs text-gray-400 text-right' }">
           <ClientOnly>
             <div class="relative rounded-lg overflow-hidden border border-gray-300">
               <div id="workcenter-map" class="h-48 w-full"></div>
@@ -92,7 +93,7 @@
           </p>
         </UFormGroup>
         
-        <UFormGroup label="Address" hint="Auto-filled from map" :ui="{ hint: 'text-xs text-gray-400' }">
+        <UFormGroup label="Address" hint="Auto-filled from map" :ui="{ hint: 'text-xs text-gray-400 text-right' }">
           <UTextarea 
             v-model="form.location" 
             placeholder="Address will be filled when you click on the map" 
@@ -209,6 +210,11 @@ const form = reactive({
     location: '',
     latitude: null as number | null,
     longitude: null as number | null
+})
+
+// Form validation - button enabled only when required fields are filled
+const isFormValid = computed(() => {
+    return form.name.trim() !== '' && form.code.trim() !== ''
 })
 
 const resetForm = () => {

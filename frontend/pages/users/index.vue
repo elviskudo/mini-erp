@@ -42,24 +42,24 @@
         </template>
         
         <form class="space-y-4" @submit.prevent="saveUser">
-          <UFormGroup label="Username" required>
-            <UInput v-model="form.username" placeholder="Enter username" />
+          <UFormGroup label="Username" required hint="Unique login name" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.username" placeholder="e.g. john.smith" />
           </UFormGroup>
-          <UFormGroup label="Email" required>
-            <UInput v-model="form.email" type="email" placeholder="Enter email" />
+          <UFormGroup label="Email" required hint="Valid email address" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.email" type="email" placeholder="e.g. john@company.com" />
           </UFormGroup>
-          <UFormGroup label="Role" required>
+          <UFormGroup label="Role" required hint="User permission level" :ui="{ hint: 'text-xs text-gray-400' }">
             <USelect v-model="form.role" :options="roleOptions" placeholder="Select role" />
           </UFormGroup>
-          <UFormGroup label="Password" :required="!editingUser">
-            <UInput v-model="form.password" type="password" :placeholder="editingUser ? 'Leave blank to keep current' : 'Enter password'" />
+          <UFormGroup label="Password" :required="!editingUser" :hint="editingUser ? 'Leave blank to keep current' : 'Minimum 8 characters'" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.password" type="password" :placeholder="editingUser ? '••••••••' : 'Enter password'" />
           </UFormGroup>
         </form>
         
         <template #footer>
           <div class="flex justify-end gap-2">
             <UButton variant="ghost" @click="showModal = false">Cancel</UButton>
-            <UButton @click="saveUser" :loading="saving">{{ editingUser ? 'Update' : 'Create' }}</UButton>
+            <UButton @click="saveUser" :loading="saving" :disabled="!form.username || !form.email || !form.role || (!editingUser && !form.password)">{{ editingUser ? 'Update' : 'Create' }}</UButton>
           </div>
         </template>
       </UCard>

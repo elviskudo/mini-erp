@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from uuid import UUID
 from enum import Enum
+from datetime import datetime
 
 class ProductType(str, Enum):
     RAW_MATERIAL = "Raw Material"
@@ -32,8 +33,15 @@ class WorkCenterResponse(WorkCenterBase):
 class ProductBase(BaseModel):
     code: str
     name: str
+    description: Optional[str] = None
     type: ProductType = ProductType.RAW_MATERIAL
     uom: str = "pcs"
+    image_url: Optional[str] = None
+    is_manufactured: bool = True
+    requires_cold_chain: bool = False
+    max_storage_temp: Optional[float] = None
+    desired_margin: Optional[float] = 0.3  # 30% default
+    standard_cost: Optional[float] = 0.0
 
 class ProductCreate(ProductBase):
     pass
@@ -117,8 +125,20 @@ class ProductionOrderResponse(BaseModel):
     order_no: str
     status: ProductionOrderStatus
     quantity: float
+    target_qty: float = 0.0
+    completed_qty: float = 0.0
     progress: int
-    scheduled_date: Optional[str] = None
+    scheduled_date: Optional[datetime] = None
+    deadline: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    labor_hours: float = 0.0
+    hourly_rate: float = 0.0
+    material_cost: float = 0.0
+    labor_cost: float = 0.0
+    overhead_cost: float = 0.0
+    total_hpp: float = 0.0
+    hpp_per_unit: float = 0.0
     notes: Optional[str] = None
     products: List[ProductionOrderProductResponse] = []
     work_centers: List[ProductionOrderWorkCenterResponse] = []

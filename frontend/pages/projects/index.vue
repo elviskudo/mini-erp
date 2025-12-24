@@ -42,32 +42,32 @@
       <div class="p-4">
         <h3 class="text-lg font-bold mb-4">Create New Project</h3>
         <UForm :state="form" class="space-y-4" @submit="onSubmit">
-            <UFormGroup label="Project Name" name="name" required>
-                <UInput v-model="form.name" />
+            <UFormGroup label="Project Name" name="name" required hint="Descriptive project name" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UInput v-model="form.name" placeholder="e.g. New Product Development" />
             </UFormGroup>
             <div class="grid grid-cols-2 gap-4">
-                <UFormGroup label="Project Code" name="code" required>
-                    <UInput v-model="form.code" placeholder="PRJ-2024-XXX" />
+                <UFormGroup label="Project Code" name="code" required hint="Unique identifier" :ui="{ hint: 'text-xs text-gray-400' }">
+                    <UInput v-model="form.code" placeholder="e.g. PRJ-2024-001" />
                 </UFormGroup>
-                <UFormGroup label="Type" name="type" required>
+                <UFormGroup label="Type" name="type" required hint="Project category" :ui="{ hint: 'text-xs text-gray-400' }">
                     <USelect v-model="form.type" :options="['R_AND_D', 'CUSTOMER_ORDER', 'INTERNAL_IMPROVEMENT']" />
                 </UFormGroup>
             </div>
-             <UFormGroup label="Budget Estimate" name="budget">
-                <UInput v-model="form.budget" type="number" />
+             <UFormGroup label="Budget Estimate" name="budget" required hint="Total project budget" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UInput v-model="form.budget" type="number" placeholder="0" />
             </UFormGroup>
             <div class="grid grid-cols-2 gap-4">
-                 <UFormGroup label="Start Date" name="start_date">
+                 <UFormGroup label="Start Date" name="start_date" required hint="Project kick-off" :ui="{ hint: 'text-xs text-gray-400' }">
                      <UInput v-model="form.start_date" type="date" />
                 </UFormGroup>
-                <UFormGroup label="End Date" name="end_date">
+                <UFormGroup label="End Date" name="end_date" required hint="Target completion" :ui="{ hint: 'text-xs text-gray-400' }">
                      <UInput v-model="form.end_date" type="date" />
                 </UFormGroup>
             </div>
 
             <div class="flex justify-end gap-2 mt-6">
                 <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" color="black" :loading="saving">Create Project</UButton>
+                <UButton type="submit" color="black" :loading="saving" :disabled="!form.name || !form.code">Create Project</UButton>
             </div>
         </UForm>
       </div>

@@ -22,7 +22,7 @@
         <UButton variant="ghost" @click="close">
           {{ cancelLabel }}
         </UButton>
-        <UButton :loading="loading" @click="$emit('submit')">
+        <UButton :loading="loading" :disabled="disabled" @click="$emit('submit')">
           {{ submitLabel }}
         </UButton>
       </div>
@@ -37,10 +37,12 @@ const props = withDefaults(defineProps<{
   submitLabel?: string
   cancelLabel?: string
   loading?: boolean
+  disabled?: boolean
 }>(), {
   submitLabel: 'Save',
   cancelLabel: 'Cancel',
-  loading: false
+  loading: false,
+  disabled: false
 })
 
 const emit = defineEmits<{

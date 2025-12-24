@@ -20,12 +20,12 @@
         </template>
 
         <form @submit.prevent="registerCompany" class="space-y-4">
-          <UFormGroup label="Company Name" required>
-            <UInput v-model="company.name" placeholder="Acme Corporation" />
+          <UFormGroup label="Company Name" required hint="Your organization's legal name" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="company.name" placeholder="e.g. Acme Corporation" />
           </UFormGroup>
 
-          <UFormGroup label="Domain (optional)" hint="Your unique subdomain">
-            <UInput v-model="company.domain" placeholder="acme">
+          <UFormGroup label="Domain" hint="Your unique subdomain (optional)" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="company.domain" placeholder="e.g. acme">
               <template #trailing>
                 <span class="text-gray-400">.minierp.com</span>
               </template>
@@ -33,17 +33,17 @@
           </UFormGroup>
 
           <div class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Currency">
+            <UFormGroup label="Currency" hint="Default currency" :ui="{ hint: 'text-xs text-gray-400' }">
               <USelect v-model="company.currency" :options="currencies" />
             </UFormGroup>
-            <UFormGroup label="Timezone">
+            <UFormGroup label="Timezone" hint="Primary timezone" :ui="{ hint: 'text-xs text-gray-400' }">
               <USelect v-model="company.timezone" :options="timezones" />
             </UFormGroup>
           </div>
 
           <UAlert v-if="error" color="red" variant="soft" :title="error" icon="i-heroicons-x-circle" />
 
-          <UButton type="submit" block size="lg" :loading="loading" color="pink">
+          <UButton type="submit" block size="lg" :loading="loading" :disabled="!company.name.trim()" color="pink">
             Continue to Admin Setup →
           </UButton>
         </form>

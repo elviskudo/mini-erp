@@ -100,11 +100,38 @@ def upgrade() -> None:
             capacity_hours FLOAT DEFAULT 8.0,
             location VARCHAR,
             latitude FLOAT,
-            longitude FLOAT
+            longitude FLOAT,
+            is_active BOOLEAN DEFAULT true
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_work_centers_tenant_id ON work_centers(tenant_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_work_centers_code ON work_centers(code)")
+    
+    # Create producttype enum
+    op.execute("DO $$ BEGIN CREATE TYPE producttype AS ENUM ('Raw Material', 'WIP', 'Finished Goods'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create products table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            description TEXT,
+            type producttype DEFAULT 'Raw Material',
+            uom VARCHAR DEFAULT 'pcs',
+            is_manufactured BOOLEAN DEFAULT true,
+            image_url TEXT,
+            standard_cost FLOAT DEFAULT 0.0,
+            weighted_avg_cost FLOAT DEFAULT 0.0,
+            desired_margin FLOAT DEFAULT 0.3,
+            suggested_selling_price FLOAT DEFAULT 0.0,
+            requires_cold_chain BOOLEAN DEFAULT false,
+            max_storage_temp FLOAT
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_products_tenant_id ON products(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_products_code ON products(code)")
     
     # Create menus table (for database-driven menu system)
     op.execute("""
@@ -134,15 +161,340 @@ def upgrade() -> None:
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_role_menu_permissions_tenant_id ON role_menu_permissions(tenant_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_role_menu_permissions_menu_id ON role_menu_permissions(menu_id)")
+    
+    # Create warehouses table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS warehouses (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            address VARCHAR
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_warehouses_tenant_id ON warehouses(tenant_id)")
+    
+    # Create storage_zones table (for cold chain management)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS storage_zones (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+            zone_name VARCHAR NOT NULL,
+            zone_type VARCHAR DEFAULT 'Ambient',
+            min_temp FLOAT,
+            max_temp FLOAT,
+            capacity_units INTEGER DEFAULT 0,
+            sensor_id VARCHAR,
+            electricity_meter_id VARCHAR,
+            electricity_tariff FLOAT DEFAULT 1500.0,
+            daily_kwh_usage FLOAT DEFAULT 0.0,
+            monthly_energy_cost FLOAT DEFAULT 0.0
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_storage_zones_tenant_id ON storage_zones(tenant_id)")
+    
+    # Create locationtype enum
+    op.execute("DO $$ BEGIN CREATE TYPE locationtype AS ENUM ('STORAGE', 'RECEIVING', 'SHIPPING', 'PRODUCTION'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create locations table with zone_id
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS locations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE,
+            zone_id UUID REFERENCES storage_zones(id),
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            type locationtype DEFAULT 'STORAGE'
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_locations_tenant_id ON locations(tenant_id)")
+    
+    # Create origintype enum for inventory batches
+    op.execute("DO $$ BEGIN CREATE TYPE origintype AS ENUM ('PURCHASED', 'MANUFACTURED', 'TRANSFERRED', 'ADJUSTED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create inventory_batches table with all columns
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS inventory_batches (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            batch_number VARCHAR NOT NULL,
+            quantity_on_hand FLOAT DEFAULT 0.0,
+            expiration_date TIMESTAMP,
+            location_id UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+            origin_type origintype DEFAULT 'PURCHASED',
+            unit_cost FLOAT DEFAULT 0.0,
+            goods_receipt_id UUID,
+            production_order_id UUID,
+            vendor_id UUID,
+            qr_code_data VARCHAR
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_inventory_batches_tenant_id ON inventory_batches(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_inventory_batches_batch_number ON inventory_batches(batch_number)")
+    
+    # Create movementtype enum with proper values
+    op.execute("DO $$ BEGIN CREATE TYPE movementtype AS ENUM ('INBOUND', 'OUTBOUND', 'TRANSFER', 'ADJUSTMENT'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create stock_movements table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS stock_movements (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            batch_id UUID REFERENCES inventory_batches(id),
+            location_id UUID NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+            quantity_change FLOAT NOT NULL,
+            movement_type movementtype NOT NULL,
+            reference_id VARCHAR,
+            project_id VARCHAR,
+            created_by UUID REFERENCES users(id),
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notes VARCHAR
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_stock_movements_tenant_id ON stock_movements(tenant_id)")
+    
+    # Create gatewaytype enum
+    op.execute("DO $$ BEGIN CREATE TYPE gatewaytype AS ENUM ('Stripe', 'Midtrans', 'Xendit', 'PayPal', 'Manual'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create tenant_settings table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_settings (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID REFERENCES tenants(id) UNIQUE NOT NULL,
+            company_name VARCHAR,
+            company_logo_url VARCHAR,
+            industry VARCHAR,
+            currency_code VARCHAR(3) DEFAULT 'IDR',
+            currency_symbol VARCHAR(10) DEFAULT 'Rp',
+            currency_position VARCHAR(10) DEFAULT 'before',
+            decimal_separator VARCHAR(1) DEFAULT ',',
+            thousand_separator VARCHAR(1) DEFAULT '.',
+            decimal_places VARCHAR(1) DEFAULT '0',
+            timezone VARCHAR DEFAULT 'Asia/Jakarta',
+            date_format VARCHAR DEFAULT 'DD/MM/YYYY',
+            setup_complete BOOLEAN DEFAULT false
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_tenant_settings_tenant_id ON tenant_settings(tenant_id)")
+    
+    # Create payment_gateways table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS payment_gateways (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID REFERENCES tenants(id) NOT NULL,
+            name VARCHAR NOT NULL,
+            gateway_type gatewaytype DEFAULT 'Manual',
+            api_key TEXT,
+            api_secret TEXT,
+            webhook_secret TEXT,
+            is_active BOOLEAN DEFAULT true,
+            is_sandbox BOOLEAN DEFAULT false,
+            notes TEXT
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payment_gateways_tenant_id ON payment_gateways(tenant_id)")
+    
+    # Create storagetype enum
+    op.execute("DO $$ BEGIN CREATE TYPE storagetype AS ENUM ('Local', 'Cloudinary', 'AWS S3', 'Google Cloud Storage', 'Azure Blob Storage'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create storage_providers table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS storage_providers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID REFERENCES tenants(id) NOT NULL,
+            name VARCHAR NOT NULL,
+            storage_type storagetype DEFAULT 'Local',
+            bucket_name VARCHAR,
+            region VARCHAR,
+            base_url VARCHAR,
+            api_key TEXT,
+            api_secret TEXT,
+            cloud_name VARCHAR,
+            access_key_id VARCHAR,
+            secret_access_key TEXT,
+            is_active BOOLEAN DEFAULT true,
+            is_default BOOLEAN DEFAULT false,
+            notes TEXT
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_storage_providers_tenant_id ON storage_providers(tenant_id)")
+    
+    # ============ Procurement Base Tables ============
+    
+    # Create vendor enums
+    op.execute("DO $$ BEGIN CREATE TYPE vendorrating AS ENUM ('A', 'B', 'C'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE vendorcategory AS ENUM ('Raw Material', 'Finished Goods', 'Both'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE prstatus AS ENUM ('Draft', 'Pending Approval', 'Approved', 'Rejected', 'Converted'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE postatus AS ENUM ('Draft', 'Pending Approval', 'Open', 'Partial Receive', 'Closed', 'Cancelled'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create vendors table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vendors (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            email VARCHAR,
+            phone VARCHAR,
+            address VARCHAR,
+            rating vendorrating DEFAULT 'B',
+            category vendorcategory DEFAULT 'Raw Material'
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vendors_tenant_id ON vendors(tenant_id)")
+    
+    # Create purchase_requests table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS purchase_requests (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            pr_number VARCHAR NOT NULL,
+            requester_id UUID REFERENCES users(id),
+            department VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            required_date TIMESTAMP,
+            status prstatus DEFAULT 'Draft',
+            notes VARCHAR
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_purchase_requests_tenant_id ON purchase_requests(tenant_id)")
+    
+    # Create pr_lines table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS pr_lines (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            pr_id UUID NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+            product_id UUID REFERENCES products(id),
+            quantity FLOAT NOT NULL,
+            estimated_price FLOAT DEFAULT 0.0
+        )
+    """)
+    
+    # Create purchase_orders table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS purchase_orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            po_number VARCHAR NOT NULL,
+            vendor_id UUID NOT NULL REFERENCES vendors(id),
+            pr_id UUID REFERENCES purchase_requests(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expected_delivery TIMESTAMP,
+            status postatus DEFAULT 'Draft',
+            budget_checked BOOLEAN DEFAULT false,
+            approved_by UUID REFERENCES users(id),
+            approved_at TIMESTAMP,
+            subtotal FLOAT DEFAULT 0.0,
+            shipping_cost FLOAT DEFAULT 0.0,
+            insurance_cost FLOAT DEFAULT 0.0,
+            customs_duty FLOAT DEFAULT 0.0,
+            total_amount FLOAT DEFAULT 0.0,
+            notes VARCHAR
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_purchase_orders_tenant_id ON purchase_orders(tenant_id)")
+    
+    # Create po_lines table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS po_lines (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+            product_id UUID REFERENCES products(id),
+            quantity FLOAT NOT NULL,
+            received_qty FLOAT DEFAULT 0.0,
+            unit_price FLOAT DEFAULT 0.0,
+            line_total FLOAT DEFAULT 0.0
+        )
+    """)
+    
+    # ============ Procurement Enhancement ============
+    
+    # Create payment enums
+    op.execute("DO $$ BEGIN CREATE TYPE paymentterm AS ENUM ('Cash', 'Net 7', 'Net 15', 'Net 30', 'Net 60', '3 Termin', '6 Termin', '12 Termin'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE paymentstatus AS ENUM ('Unpaid', 'Partial', 'Paid'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Add payment fields to vendors
+    op.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS payment_term paymentterm DEFAULT 'Net 30'")
+    op.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS credit_limit FLOAT DEFAULT 0.0")
+    
+    # Add payment and progress fields to purchase_orders
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_term paymentterm DEFAULT 'Net 30'")
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS due_date TIMESTAMP")
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS amount_paid FLOAT DEFAULT 0.0")
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_status paymentstatus DEFAULT 'Unpaid'")
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS progress FLOAT DEFAULT 0.0")
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS current_approval_level INTEGER DEFAULT 0")
+    op.execute("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS required_approval_level INTEGER DEFAULT 1")
+    
+    # ============ Approval Workflow ============
+    
+    # Create approval enums
+    op.execute("DO $$ BEGIN CREATE TYPE approvalstatus AS ENUM ('Pending', 'Approved', 'Rejected'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE entitytype AS ENUM ('PurchaseOrder', 'PurchaseRequest', 'Payment', 'Expense'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create approval_levels table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS approval_levels (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID REFERENCES tenants(id) NOT NULL,
+            level INTEGER NOT NULL,
+            name VARCHAR NOT NULL,
+            min_amount FLOAT DEFAULT 0.0,
+            max_amount FLOAT,
+            role_id UUID REFERENCES roles(id),
+            description VARCHAR,
+            is_active BOOLEAN DEFAULT true
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_approval_levels_tenant_id ON approval_levels(tenant_id)")
+    
+    # Create approval_history table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS approval_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID REFERENCES tenants(id) NOT NULL,
+            entity_type entitytype NOT NULL,
+            entity_id UUID NOT NULL,
+            level INTEGER NOT NULL,
+            approved_by UUID REFERENCES users(id),
+            status approvalstatus DEFAULT 'Pending',
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_approval_history_tenant_id ON approval_history(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_approval_history_entity_id ON approval_history(entity_id)")
 
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS storage_providers")
+    op.execute("DROP TYPE IF EXISTS storagetype")
+    op.execute("DROP TABLE IF EXISTS payment_gateways")
+    op.execute("DROP TABLE IF EXISTS tenant_settings")
+    op.execute("DROP TYPE IF EXISTS gatewaytype")
+    op.execute("DROP TABLE IF EXISTS stock_movements")
+    op.execute("DROP TABLE IF EXISTS inventory_batches")
+    op.execute("DROP TABLE IF EXISTS locations")
+    op.execute("DROP TABLE IF EXISTS storage_zones")
+    op.execute("DROP TABLE IF EXISTS warehouses")
     op.execute("DROP TABLE IF EXISTS role_menu_permissions")
     op.execute("DROP TABLE IF EXISTS menus")
+    op.execute("DROP TABLE IF EXISTS products")
     op.execute("DROP TABLE IF EXISTS work_centers")
     op.execute("DROP TABLE IF EXISTS tenant_members")
     op.execute("DROP TABLE IF EXISTS users")
     op.execute("DROP TABLE IF EXISTS tenants")
+    op.execute("DROP TYPE IF EXISTS movementtype")
+    op.execute("DROP TYPE IF EXISTS origintype")
+    op.execute("DROP TYPE IF EXISTS locationtype")
+    op.execute("DROP TYPE IF EXISTS producttype")
     op.execute("DROP TYPE IF EXISTS memberrole")
     op.execute("DROP TYPE IF EXISTS subscriptiontier")
     op.execute("DROP TYPE IF EXISTS userrole")

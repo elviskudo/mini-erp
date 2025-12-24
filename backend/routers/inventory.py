@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 from typing import List
 import uuid
 import database
@@ -63,13 +64,311 @@ async def create_location(warehouse_id: uuid.UUID, location: schemas.LocationCre
     return new_loc
 
 @router.get("/stock")
-async def list_stock(db: AsyncSession = Depends(database.get_db)):
-    # Return all batches with qty > 0
+async def list_stock(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Return all inventory batches with qty > 0 for current tenant.
+    Includes product, location, and warehouse information.
+    
+    Expiration date is set when:
+    - Goods Receipt: from PO line or manual entry
+    - Production Transfer: can be set based on product shelf life
+    """
     query = select(models.InventoryBatch)\
-        .where(models.InventoryBatch.quantity_on_hand > 0)\
-        .options(selectinload(models.InventoryBatch.product), selectinload(models.InventoryBatch.location))
+        .where(
+            models.InventoryBatch.tenant_id == current_user.tenant_id,
+            models.InventoryBatch.quantity_on_hand > 0
+        )\
+        .options(
+            selectinload(models.InventoryBatch.product),
+            selectinload(models.InventoryBatch.location).selectinload(models.Location.warehouse)
+        )
     result = await db.execute(query)
-    return result.scalars().all()
+    batches = result.scalars().all()
+    
+    # Transform to include warehouse name
+    return [
+        {
+            "id": str(b.id),
+            "product": {
+                "id": str(b.product.id) if b.product else None,
+                "name": b.product.name if b.product else "Unknown",
+                "code": b.product.code if b.product else "",
+                "image_url": b.product.image_url if b.product else None
+            },
+            "batch_number": b.batch_number,
+            "quantity_on_hand": b.quantity_on_hand,
+            "expiration_date": b.expiration_date.isoformat() if b.expiration_date else None,
+            "location": {
+                "id": str(b.location.id) if b.location else None,
+                "name": b.location.name if b.location else "Unknown",
+                "code": b.location.code if b.location else ""
+            },
+            "warehouse": {
+                "id": str(b.location.warehouse.id) if b.location and b.location.warehouse else None,
+                "name": b.location.warehouse.name if b.location and b.location.warehouse else "Unknown"
+            },
+            "origin_type": b.origin_type.value if b.origin_type else "UNKNOWN",
+            "unit_cost": b.unit_cost or 0,
+            "qr_code_data": b.qr_code_data
+        }
+        for b in batches
+    ]
+
+
+@router.put("/stock/{batch_id}/set-expiry")
+async def set_batch_expiry(
+    batch_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Set or update expiration date for an inventory batch"""
+    from datetime import datetime
+    
+    result = await db.execute(
+        select(models.InventoryBatch)
+        .where(
+            models.InventoryBatch.id == batch_id,
+            models.InventoryBatch.tenant_id == current_user.tenant_id
+        )
+    )
+    batch = result.scalar_one_or_none()
+    
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    expiry_date_str = payload.get('expiration_date')
+    if expiry_date_str:
+        batch.expiration_date = datetime.fromisoformat(expiry_date_str.replace('Z', '+00:00'))
+    else:
+        batch.expiration_date = None
+    
+    await db.commit()
+    
+    return {
+        "message": "Expiration date updated",
+        "batch_id": str(batch.id),
+        "expiration_date": batch.expiration_date.isoformat() if batch.expiration_date else None
+    }
+
+
+@router.put("/stock/{batch_id}/move-location")
+async def move_batch_location(
+    batch_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Move batch to a new location within a warehouse"""
+    result = await db.execute(
+        select(models.InventoryBatch)
+        .where(
+            models.InventoryBatch.id == batch_id,
+            models.InventoryBatch.tenant_id == current_user.tenant_id
+        )
+        .options(selectinload(models.InventoryBatch.location))
+    )
+    batch = result.scalar_one_or_none()
+    
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    new_location_id = payload.get('location_id')
+    if not new_location_id:
+        raise HTTPException(status_code=400, detail="location_id is required")
+    
+    # Verify the new location exists and belongs to same tenant
+    loc_result = await db.execute(
+        select(models.Location)
+        .where(
+            models.Location.id == new_location_id,
+            models.Location.tenant_id == current_user.tenant_id
+        )
+        .options(selectinload(models.Location.warehouse))
+    )
+    new_location = loc_result.scalar_one_or_none()
+    
+    if not new_location:
+        raise HTTPException(status_code=404, detail="Target location not found")
+    
+    old_location_name = batch.location.name if batch.location else "Unknown"
+    old_location_id = batch.location_id
+    
+    # Update batch location
+    batch.location_id = new_location_id
+    
+    # Create transfer movement record
+    from models import models_ledger
+    import uuid as uuid_lib
+    
+    movement = models_ledger.StockMovement(
+        id=uuid_lib.uuid4(),
+        tenant_id=current_user.tenant_id,
+        product_id=batch.product_id,
+        batch_id=batch.id,
+        location_id=new_location_id,
+        quantity_change=batch.quantity_on_hand,  # Positive = transfer IN to new location
+        movement_type=models_ledger.MovementType.TRANSFER,
+        reference_id=f"MOVE:{str(batch.id)[:8]}",
+        created_by=current_user.id,
+        notes=f"Transferred from {old_location_name} to {new_location.name}"
+    )
+    db.add(movement)
+    
+    await db.commit()
+    
+    return {
+        "message": f"Moved from {old_location_name} to {new_location.name}",
+        "batch_id": str(batch.id),
+        "new_location": new_location.name,
+        "warehouse": new_location.warehouse.name if new_location.warehouse else "Unknown"
+    }
+
+
+@router.get("/locations-for-move")
+async def get_locations_for_move(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get all locations for the move dropdown"""
+    result = await db.execute(
+        select(models.Location)
+        .where(models.Location.tenant_id == current_user.tenant_id)
+        .options(selectinload(models.Location.warehouse))
+    )
+    locations = result.scalars().all()
+    
+    return [
+        {
+            "id": str(loc.id),
+            "name": loc.name,
+            "code": loc.code,
+            "warehouse": loc.warehouse.name if loc.warehouse else "Unknown"
+        }
+        for loc in locations
+    ]
+
+
+@router.get("/movements")
+async def list_movements(
+    movement_type: str = None,
+    warehouse_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    user_id: str = None,
+    limit: int = 50,
+    offset: int = 0,
+    sort_by: str = "timestamp",
+    sort_order: str = "desc",
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get stock movements history with filters"""
+    from models import models_ledger
+    from datetime import datetime
+    
+    # Build query with filters
+    query = select(models_ledger.StockMovement)\
+        .where(models_ledger.StockMovement.tenant_id == current_user.tenant_id)
+    
+    # Apply filters
+    if movement_type:
+        try:
+            mt = models_ledger.MovementType(movement_type)
+            query = query.where(models_ledger.StockMovement.movement_type == mt)
+        except ValueError:
+            # Try matching by name (INBOUND, OUTBOUND, etc)
+            mt_map = {e.value: e for e in models_ledger.MovementType}
+            if movement_type in mt_map:
+                query = query.where(models_ledger.StockMovement.movement_type == mt_map[movement_type])
+    
+    if warehouse_id:
+        # Join with location to filter by warehouse
+        query = query.join(models.Location, models_ledger.StockMovement.location_id == models.Location.id)\
+            .where(models.Location.warehouse_id == warehouse_id)
+    
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+            query = query.where(models_ledger.StockMovement.timestamp >= dt_from)
+        except:
+            pass
+    
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+            query = query.where(models_ledger.StockMovement.timestamp <= dt_to)
+        except:
+            pass
+    
+    if user_id:
+        query = query.where(models_ledger.StockMovement.created_by == user_id)
+    
+    # Count total before pagination
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    # Apply sorting
+    sort_column = getattr(models_ledger.StockMovement, sort_by, models_ledger.StockMovement.timestamp)
+    if sort_order == "asc":
+        query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(sort_column.desc())
+    
+    # Apply pagination
+    query = query.offset(offset).limit(limit)
+    
+    # Add eager loading
+    query = query.options(
+        selectinload(models_ledger.StockMovement.product),
+        selectinload(models_ledger.StockMovement.location).selectinload(models.Location.warehouse),
+        selectinload(models_ledger.StockMovement.user)
+    )
+    
+    result = await db.execute(query)
+    movements = result.scalars().all()
+    
+    # Calculate stats from all data (without pagination)
+    stats_query = select(models_ledger.StockMovement)\
+        .where(models_ledger.StockMovement.tenant_id == current_user.tenant_id)
+    stats_result = await db.execute(stats_query)
+    all_movements = stats_result.scalars().all()
+    
+    inbound = sum(1 for m in all_movements if m.movement_type and m.movement_type.value == 'Inbound')
+    outbound = sum(1 for m in all_movements if m.movement_type and m.movement_type.value == 'Outbound')
+    transfer = sum(1 for m in all_movements if m.movement_type and m.movement_type.value == 'Transfer')
+    adjustment = sum(1 for m in all_movements if m.movement_type and m.movement_type.value == 'Adjustment')
+    
+    return {
+        "movements": [
+            {
+                "id": str(m.id),
+                "reference": m.reference_id or f"MOV-{str(m.id)[:8]}",
+                "type": m.movement_type.value if m.movement_type else "Unknown",
+                "item": m.product.name if m.product else "Unknown",
+                "quantity": m.quantity_change,
+                "warehouse": m.location.warehouse.name if m.location and hasattr(m.location, 'warehouse') and m.location.warehouse else "Unknown",
+                "location": m.location.name if m.location else "Unknown",
+                "timestamp": m.timestamp.isoformat() if m.timestamp else None,
+                "user": m.user.username if m.user else "System",
+                "notes": m.notes
+            }
+            for m in movements
+        ],
+        "stats": {
+            "inbound": inbound,
+            "outbound": outbound,
+            "transfer": transfer,
+            "adjustment": adjustment
+        },
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 
 # Storage Zone Endpoints

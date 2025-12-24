@@ -65,18 +65,19 @@
       v-model="isOpen" 
       :title="editMode ? 'Edit Storage Zone' : 'Add Storage Zone'"
       :loading="submitting"
+      :disabled="!isFormValid"
       @submit="saveZone"
     >
       <div class="space-y-4">
-        <UFormGroup label="Warehouse" required>
+        <UFormGroup label="Warehouse" required hint="Select parent warehouse" :ui="{ hint: 'text-xs text-gray-400' }">
           <USelect v-model="form.warehouse_id" :options="warehouseOptions" placeholder="Select warehouse" />
         </UFormGroup>
 
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Zone Name" required>
-            <UInput v-model="form.zone_name" placeholder="Cold Storage A" />
+          <UFormGroup label="Zone Name" required hint="Unique zone identifier" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.zone_name" placeholder="e.g. Cold Storage A" />
           </UFormGroup>
-          <UFormGroup label="Zone Type" required>
+          <UFormGroup label="Zone Type" required hint="Storage classification" :ui="{ hint: 'text-xs text-gray-400' }">
             <USelect v-model="form.zone_type" :options="zoneTypeOptions" />
           </UFormGroup>
         </div>
@@ -85,10 +86,10 @@
         <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
           <h4 class="text-sm font-medium text-gray-700 mb-3">Temperature Settings</h4>
           <div class="grid grid-cols-2 gap-4">
-            <UFormGroup label="Min Temp (°C)">
+            <UFormGroup label="Min Temp (°C)" hint="Minimum allowed" :ui="{ hint: 'text-xs text-gray-400' }">
               <UInput v-model="form.min_temp" type="number" step="0.1" />
             </UFormGroup>
-            <UFormGroup label="Max Temp (°C)">
+            <UFormGroup label="Max Temp (°C)" hint="Maximum allowed" :ui="{ hint: 'text-xs text-gray-400' }">
               <UInput v-model="form.max_temp" type="number" step="0.1" />
             </UFormGroup>
           </div>
@@ -96,21 +97,21 @@
 
         <!-- Capacity -->
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Capacity (Units)">
+          <UFormGroup label="Capacity (Units)" hint="Max storage capacity" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.capacity_units" type="number" />
           </UFormGroup>
-          <UFormGroup label="Electricity Tariff (Rp/kWh)">
+          <UFormGroup label="Electricity Tariff (Rp/kWh)" hint="Cost per kWh" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.electricity_tariff" type="number" step="0.01" />
           </UFormGroup>
         </div>
 
         <!-- IoT Integration -->
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Sensor ID (Optional)">
-            <UInput v-model="form.sensor_id" placeholder="SENSOR-001" />
+          <UFormGroup label="Sensor ID" hint="IoT temp sensor" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.sensor_id" placeholder="e.g. SENSOR-001" />
           </UFormGroup>
-          <UFormGroup label="Meter ID (Optional)">
-            <UInput v-model="form.electricity_meter_id" placeholder="METER-001" />
+          <UFormGroup label="Meter ID" hint="Energy meter ID" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.electricity_meter_id" placeholder="e.g. METER-001" />
           </UFormGroup>
         </div>
       </div>
@@ -194,6 +195,11 @@ const form = reactive({
 
 const energyForm = reactive({
   daily_kwh: 0
+})
+
+// Form validation - button enabled only when required fields are filled
+const isFormValid = computed(() => {
+    return form.warehouse_id !== '' && form.zone_name.trim() !== '' && form.zone_type !== ''
 })
 
 const zoneStats = computed(() => {

@@ -36,6 +36,23 @@ class POStatus(str, enum.Enum):
     CANCELLED = "Cancelled"
 
 
+class PaymentTerm(str, enum.Enum):
+    CASH = "Cash"              # Bayar Lunas
+    NET_7 = "Net 7"            # 7 hari
+    NET_15 = "Net 15"          # 15 hari
+    NET_30 = "Net 30"          # 30 hari
+    NET_60 = "Net 60"          # 60 hari
+    INSTALLMENT_3 = "3 Termin" # 3x bayar
+    INSTALLMENT_6 = "6 Termin" # 6x bayar
+    INSTALLMENT_12 = "12 Termin" # 12x bayar
+
+
+class PaymentStatus(str, enum.Enum):
+    UNPAID = "Unpaid"
+    PARTIAL = "Partial"
+    PAID = "Paid"
+
+
 class Vendor(Base):
     __tablename__ = "vendors"
 
@@ -48,6 +65,16 @@ class Vendor(Base):
     address = Column(String, nullable=True)
     rating = Column(Enum(VendorRating), default=VendorRating.B)
     category = Column(Enum(VendorCategory), default=VendorCategory.RAW_MATERIAL)
+    
+    # Location - UNCOMMENT AFTER RUNNING MIGRATION:
+    # alembic revision --autogenerate -m "Add vendor lat lng"
+    # alembic upgrade head
+    # latitude = Column(Float, nullable=True)
+    # longitude = Column(Float, nullable=True)
+    
+    # Payment Terms
+    payment_term = Column(Enum(PaymentTerm), default=PaymentTerm.NET_30)
+    credit_limit = Column(Float, default=0.0)  # Maximum outstanding credit
     
     # Relationships
     supplied_items = relationship("SupplierItem", back_populates="vendor", cascade="all, delete-orphan")
@@ -86,6 +113,15 @@ class PurchaseRequest(Base):
     required_date = Column(DateTime, nullable=True)
     status = Column(Enum(PRStatus), default=PRStatus.DRAFT)
     notes = Column(String, nullable=True)
+    
+    # Approval fields
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    
+    # Rejection fields
+    rejected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    reject_reason = Column(String, nullable=True)
     
     items = relationship("PRLine", back_populates="pr", cascade="all, delete-orphan")
 
@@ -127,6 +163,17 @@ class PurchaseOrder(Base):
     insurance_cost = Column(Float, default=0.0)
     customs_duty = Column(Float, default=0.0)
     total_amount = Column(Float, default=0.0)
+    
+    # Payment & Progress
+    payment_term = Column(Enum(PaymentTerm), default=PaymentTerm.NET_30)
+    due_date = Column(DateTime, nullable=True)
+    amount_paid = Column(Float, default=0.0)
+    payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.UNPAID)
+    progress = Column(Float, default=0.0)  # 0-100%
+    
+    # Multi-level approval
+    current_approval_level = Column(Integer, default=0)
+    required_approval_level = Column(Integer, default=1)
     
     notes = Column(String, nullable=True)
 

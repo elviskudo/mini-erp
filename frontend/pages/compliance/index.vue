@@ -52,19 +52,19 @@
       <div class="p-4">
         <h3 class="text-lg font-bold mb-4">Create SOP Document</h3>
          <UForm :state="sopForm" class="space-y-4" @submit="submitSop">
-            <UFormGroup label="Title" name="title" required>
-                <UInput v-model="sopForm.title" />
+            <UFormGroup label="Title" name="title" required hint="SOP document title" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UInput v-model="sopForm.title" placeholder="e.g. Quality Control Procedure" />
             </UFormGroup>
-            <UFormGroup label="Content / Description" name="content">
-                <UTextarea v-model="sopForm.content" />
+            <UFormGroup label="Content / Description" name="content" hint="Detailed procedure description" :ui="{ hint: 'text-xs text-gray-400' }">
+                <UTextarea v-model="sopForm.content" placeholder="Describe the standard operating procedure..." rows="4" />
             </UFormGroup>
-            <UFormGroup label="File URL (Simulated)" name="file_url">
+            <UFormGroup label="File URL" name="file_url" hint="Link to external document (optional)" :ui="{ hint: 'text-xs text-gray-400' }">
                 <UInput v-model="sopForm.file_url" placeholder="https://..." />
             </UFormGroup>
 
             <div class="flex justify-end gap-2 mt-6">
                 <UButton color="gray" variant="ghost" @click="isSopOpen = false">Cancel</UButton>
-                <UButton type="submit" color="black" :loading="savingSop">Create Draft</UButton>
+                <UButton type="submit" color="black" :loading="savingSop" :disabled="!sopForm.title">Create Draft</UButton>
             </div>
         </UForm>
       </div>

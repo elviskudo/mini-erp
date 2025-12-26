@@ -195,3 +195,156 @@ class POLine(Base):
 
     po = relationship("PurchaseOrder", back_populates="items")
     product = relationship("Product")
+
+
+# ============ REQUEST FOR QUOTATION (RFQ) ============
+
+class RFQStatus(str, enum.Enum):
+    DRAFT = "Draft"
+    SENT = "Sent"
+    RECEIVED = "Received"  # Quotes received
+    CLOSED = "Closed"
+    CANCELLED = "Cancelled"
+
+
+class RequestForQuotation(Base):
+    """RFQ - Request for Quotation to vendors"""
+    __tablename__ = "rfqs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    rfq_number = Column(String, index=True, nullable=False)
+    pr_id = Column(UUID(as_uuid=True), ForeignKey("purchase_requests.id"), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    deadline = Column(DateTime, nullable=True)  # Quote submission deadline
+    status = Column(String, default="Draft")
+    notes = Column(String, nullable=True)
+    
+    # Selected vendor after comparison
+    selected_vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
+    
+    items = relationship("RFQLine", back_populates="rfq", cascade="all, delete-orphan")
+    vendors = relationship("RFQVendor", back_populates="rfq", cascade="all, delete-orphan")
+    selected_vendor = relationship("Vendor")
+
+
+class RFQLine(Base):
+    """Items requested in RFQ"""
+    __tablename__ = "rfq_lines"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    rfq_id = Column(UUID(as_uuid=True), ForeignKey("rfqs.id"), nullable=False)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    quantity = Column(Float, nullable=False)
+    specifications = Column(String, nullable=True)  # Special requirements
+    
+    rfq = relationship("RequestForQuotation", back_populates="items")
+    product = relationship("Product")
+
+
+class RFQVendor(Base):
+    """Vendors invited to quote on RFQ"""
+    __tablename__ = "rfq_vendors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    rfq_id = Column(UUID(as_uuid=True), ForeignKey("rfqs.id"), nullable=False)
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=False)
+    
+    invited_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime, nullable=True)
+    quoted_amount = Column(Float, nullable=True)  # Total quote
+    delivery_days = Column(Integer, nullable=True)  # Quoted delivery time
+    notes = Column(String, nullable=True)  # Vendor's notes
+    is_selected = Column(Boolean, default=False)
+    
+    rfq = relationship("RequestForQuotation", back_populates="vendors")
+    vendor = relationship("Vendor")
+
+
+# NOTE: GoodsReceipt model is defined in models_receiving.py
+
+
+# ============ VENDOR BILL / INVOICE ============
+
+class BillStatus(str, enum.Enum):
+    DRAFT = "Draft"
+    PENDING = "Pending"
+    APPROVED = "Approved"
+    PARTIAL_PAID = "Partial Paid"
+    PAID = "Paid"
+    CANCELLED = "Cancelled"
+
+
+class VendorBill(Base):
+    """Vendor Invoice / Bill"""
+    __tablename__ = "vendor_bills"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    bill_number = Column(String, index=True, nullable=False)  # Our reference
+    vendor_invoice = Column(String, nullable=True)  # Vendor's invoice number
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=False)
+    po_id = Column(UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=True)
+    grn_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipts.id"), nullable=True)
+    
+    bill_date = Column(DateTime, default=datetime.utcnow)
+    due_date = Column(DateTime, nullable=True)
+    status = Column(String, default="Draft")
+    
+    # Amounts
+    subtotal = Column(Float, default=0.0)
+    tax_amount = Column(Float, default=0.0)
+    total_amount = Column(Float, default=0.0)
+    amount_paid = Column(Float, default=0.0)
+    balance_due = Column(Float, default=0.0)
+    
+    # Approval
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    
+    notes = Column(String, nullable=True)
+    
+    items = relationship("VendorBillLine", back_populates="bill", cascade="all, delete-orphan")
+    payments = relationship("VendorPayment", back_populates="bill", cascade="all, delete-orphan")
+    vendor = relationship("Vendor")
+    po = relationship("PurchaseOrder")
+
+
+class VendorBillLine(Base):
+    """Line items in vendor bill"""
+    __tablename__ = "vendor_bill_lines"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    bill_id = Column(UUID(as_uuid=True), ForeignKey("vendor_bills.id"), nullable=False)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=True)
+    description = Column(String, nullable=True)
+    quantity = Column(Float, default=1.0)
+    unit_price = Column(Float, default=0.0)
+    line_total = Column(Float, default=0.0)
+    
+    bill = relationship("VendorBill", back_populates="items")
+    product = relationship("Product")
+
+
+class VendorPayment(Base):
+    """Payment records for vendor bills"""
+    __tablename__ = "vendor_payments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    bill_id = Column(UUID(as_uuid=True), ForeignKey("vendor_bills.id"), nullable=False)
+    
+    payment_date = Column(DateTime, default=datetime.utcnow)
+    amount = Column(Float, default=0.0)
+    payment_method = Column(String, default="Bank Transfer")  # Cash, Bank Transfer, etc.
+    reference = Column(String, nullable=True)  # Bank ref, check number
+    notes = Column(String, nullable=True)
+    
+    paid_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
+    bill = relationship("VendorBill", back_populates="payments")
+

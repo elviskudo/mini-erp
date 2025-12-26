@@ -51,9 +51,15 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Failure Analysis", "to": "/dashboard/failures"}
         ]},
         {"label": "Procurement", "icon": "i-heroicons-shopping-cart", "children": [
+            {"label": "Vendors", "to": "/procurement/vendors"},
+            {"label": "Product Catalog", "to": "/procurement/products"},
             {"label": "Purchase Requests", "to": "/procurement/requests"},
+            {"label": "RFQ", "to": "/procurement/rfq"},
             {"label": "Purchase Orders", "to": "/procurement/orders"},
-            {"label": "Vendors", "to": "/procurement/vendors"}
+            {"label": "Goods Receipt", "to": "/procurement/grn"},
+            {"label": "Vendor Bills", "to": "/procurement/bills"},
+            {"label": "Payments", "to": "/procurement/payments"},
+            {"label": "Analytics", "to": "/procurement/analytics"}
         ]},
         {"label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "children": [
             {"label": "Work Centers", "to": "/manufacturing/work-centers"},

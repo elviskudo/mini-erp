@@ -638,3 +638,400 @@ async def receive_goods(
         "status": str(po.status.value if hasattr(po.status, 'value') else po.status),
         "total_landed_cost": total_landed_cost
     }
+
+
+# ============ RFQ ENDPOINTS ============
+
+@router.get("/rfqs")
+async def list_rfqs(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all RFQs"""
+    from models.models_procurement import RequestForQuotation, RFQLine, RFQVendor
+    
+    query = select(RequestForQuotation).where(
+        RequestForQuotation.tenant_id == current_user.tenant_id
+    ).order_by(RequestForQuotation.created_at.desc())
+    
+    result = await db.execute(query)
+    rfqs = result.scalars().all()
+    
+    return [
+        {
+            "id": str(r.id),
+            "rfq_number": r.rfq_number,
+            "deadline": r.deadline.isoformat() if r.deadline else None,
+            "status": r.status,
+            "notes": r.notes,
+            "items_count": 0,  # Will be populated if needed
+            "vendors_count": 0
+        }
+        for r in rfqs
+    ]
+
+
+@router.post("/rfqs")
+async def create_rfq(
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a new RFQ"""
+    from models.models_procurement import RequestForQuotation, RFQLine, RFQVendor
+    
+    # Generate RFQ number
+    count_result = await db.execute(
+        select(func.count(RequestForQuotation.id)).where(
+            RequestForQuotation.tenant_id == current_user.tenant_id
+        )
+    )
+    count = count_result.scalar() or 0
+    rfq_number = f"RFQ-{datetime.now().strftime('%Y%m')}-{count + 1:04d}"
+    
+    rfq = RequestForQuotation(
+        id=uuid.uuid4(),
+        tenant_id=current_user.tenant_id,
+        rfq_number=rfq_number,
+        pr_id=payload.get("pr_id") or None,
+        deadline=datetime.fromisoformat(payload["deadline"]) if payload.get("deadline") else None,
+        status="Draft",
+        notes=payload.get("notes")
+    )
+    db.add(rfq)
+    await db.flush()
+    
+    # Add items
+    for item in payload.get("items", []):
+        line = RFQLine(
+            id=uuid.uuid4(),
+            tenant_id=current_user.tenant_id,
+            rfq_id=rfq.id,
+            product_id=item.get("product_id"),
+            quantity=item.get("quantity", 1),
+            specifications=item.get("specifications")
+        )
+        db.add(line)
+    
+    # Add vendors
+    for vendor_id in payload.get("vendor_ids", []):
+        rfq_vendor = RFQVendor(
+            id=uuid.uuid4(),
+            tenant_id=current_user.tenant_id,
+            rfq_id=rfq.id,
+            vendor_id=vendor_id
+        )
+        db.add(rfq_vendor)
+    
+    await db.commit()
+    return {"message": "RFQ created", "rfq_number": rfq_number, "id": str(rfq.id)}
+
+
+@router.put("/rfqs/{rfq_id}/send")
+async def send_rfq(
+    rfq_id: str,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Send RFQ to vendors"""
+    from models.models_procurement import RequestForQuotation
+    
+    result = await db.execute(select(RequestForQuotation).where(RequestForQuotation.id == rfq_id))
+    rfq = result.scalar_one_or_none()
+    
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    
+    rfq.status = "Sent"
+    await db.commit()
+    return {"message": "RFQ sent to vendors", "status": "Sent"}
+
+
+# ============ VENDOR BILL ENDPOINTS ============
+
+@router.get("/bills")
+async def list_bills(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all vendor bills"""
+    from models.models_procurement import VendorBill
+    
+    query = select(VendorBill).where(
+        VendorBill.tenant_id == current_user.tenant_id
+    ).options(
+        selectinload(VendorBill.vendor)
+    ).order_by(VendorBill.bill_date.desc())
+    
+    result = await db.execute(query)
+    bills = result.scalars().all()
+    
+    return [
+        {
+            "id": str(b.id),
+            "bill_number": b.bill_number,
+            "vendor_invoice": b.vendor_invoice,
+            "vendor_id": str(b.vendor_id),
+            "vendor_name": b.vendor.name if b.vendor else "Unknown",
+            "bill_date": b.bill_date.isoformat() if b.bill_date else None,
+            "due_date": b.due_date.isoformat() if b.due_date else None,
+            "status": b.status,
+            "total_amount": b.total_amount,
+            "amount_paid": b.amount_paid,
+            "balance_due": b.balance_due
+        }
+        for b in bills
+    ]
+
+
+@router.post("/bills")
+async def create_bill(
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a vendor bill"""
+    from models.models_procurement import VendorBill, VendorBillLine
+    
+    # Generate bill number
+    count_result = await db.execute(
+        select(func.count(VendorBill.id)).where(
+            VendorBill.tenant_id == current_user.tenant_id
+        )
+    )
+    count = count_result.scalar() or 0
+    bill_number = f"BILL-{datetime.now().strftime('%Y%m')}-{count + 1:04d}"
+    
+    bill = VendorBill(
+        id=uuid.uuid4(),
+        tenant_id=current_user.tenant_id,
+        bill_number=bill_number,
+        vendor_invoice=payload.get("vendor_invoice"),
+        vendor_id=payload.get("vendor_id"),
+        po_id=payload.get("po_id") or None,
+        grn_id=payload.get("grn_id") or None,
+        bill_date=datetime.fromisoformat(payload["bill_date"]) if payload.get("bill_date") else datetime.utcnow(),
+        due_date=datetime.fromisoformat(payload["due_date"]) if payload.get("due_date") else None,
+        status="Pending",
+        total_amount=payload.get("total_amount", 0),
+        balance_due=payload.get("balance_due", payload.get("total_amount", 0)),
+        notes=payload.get("notes")
+    )
+    db.add(bill)
+    await db.flush()
+    
+    # Add line items
+    for item in payload.get("items", []):
+        line = VendorBillLine(
+            id=uuid.uuid4(),
+            tenant_id=current_user.tenant_id,
+            bill_id=bill.id,
+            product_id=item.get("product_id") or None,
+            description=item.get("description"),
+            quantity=item.get("quantity", 1),
+            unit_price=item.get("unit_price", 0),
+            line_total=item.get("quantity", 1) * item.get("unit_price", 0)
+        )
+        db.add(line)
+    
+    await db.commit()
+    return {"message": "Bill created", "bill_number": bill_number, "id": str(bill.id)}
+
+
+@router.put("/bills/{bill_id}/approve")
+async def approve_bill(
+    bill_id: str,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Approve a vendor bill"""
+    from models.models_procurement import VendorBill
+    
+    result = await db.execute(select(VendorBill).where(VendorBill.id == bill_id))
+    bill = result.scalar_one_or_none()
+    
+    if not bill:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    
+    bill.status = "Approved"
+    bill.approved_by = current_user.id
+    bill.approved_at = datetime.utcnow()
+    await db.commit()
+    return {"message": "Bill approved"}
+
+
+@router.post("/bills/{bill_id}/payments")
+async def record_bill_payment(
+    bill_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Record a payment for a vendor bill"""
+    from models.models_procurement import VendorBill, VendorPayment
+    
+    result = await db.execute(select(VendorBill).where(VendorBill.id == bill_id))
+    bill = result.scalar_one_or_none()
+    
+    if not bill:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    
+    amount = payload.get("amount", 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be positive")
+    
+    if amount > bill.balance_due:
+        raise HTTPException(status_code=400, detail=f"Amount exceeds balance due ({bill.balance_due})")
+    
+    # Create payment record
+    payment = VendorPayment(
+        id=uuid.uuid4(),
+        tenant_id=current_user.tenant_id,
+        bill_id=bill.id,
+        payment_date=datetime.utcnow(),
+        amount=amount,
+        payment_method=payload.get("payment_method", "Bank Transfer"),
+        reference=payload.get("reference"),
+        notes=payload.get("notes"),
+        paid_by=current_user.id
+    )
+    db.add(payment)
+    
+    # Update bill
+    bill.amount_paid = (bill.amount_paid or 0) + amount
+    bill.balance_due = (bill.total_amount or 0) - bill.amount_paid
+    
+    if bill.balance_due <= 0:
+        bill.status = "Paid"
+    else:
+        bill.status = "Partial Paid"
+    
+    await db.commit()
+    return {"message": "Payment recorded", "new_balance": bill.balance_due}
+
+
+# ============ PAYMENTS LISTING ============
+
+@router.get("/payments")
+async def list_payments(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all vendor payments"""
+    from models.models_procurement import VendorPayment, VendorBill
+    
+    query = select(VendorPayment, VendorBill).join(
+        VendorBill, VendorPayment.bill_id == VendorBill.id
+    ).where(
+        VendorPayment.tenant_id == current_user.tenant_id
+    ).order_by(VendorPayment.payment_date.desc())
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    payments = []
+    for payment, bill in rows:
+        # Get vendor name
+        vendor = await db.get(models.Vendor, bill.vendor_id) if bill.vendor_id else None
+        payments.append({
+            "id": str(payment.id),
+            "payment_date": payment.payment_date.isoformat() if payment.payment_date else None,
+            "bill_id": str(payment.bill_id),
+            "bill_number": bill.bill_number,
+            "vendor_id": str(bill.vendor_id) if bill.vendor_id else None,
+            "vendor_name": vendor.name if vendor else "Unknown",
+            "amount": payment.amount,
+            "payment_method": payment.payment_method,
+            "reference": payment.reference,
+            "notes": payment.notes
+        })
+    
+    return payments
+
+
+# ============ ANALYTICS ============
+
+@router.get("/analytics/summary")
+async def procurement_analytics_summary(
+    period: str = "this_month",
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get procurement analytics summary"""
+    # Calculate date range based on period
+    now = datetime.utcnow()
+    if period == "this_month":
+        start_date = now.replace(day=1, hour=0, minute=0, second=0)
+    elif period == "3_months":
+        start_date = (now.replace(day=1) - timedelta(days=60)).replace(day=1)
+    else:  # this_year
+        start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0)
+    
+    # Get total purchases
+    po_result = await db.execute(
+        select(func.sum(models_procurement.PurchaseOrder.total_amount)).where(
+            models_procurement.PurchaseOrder.tenant_id == current_user.tenant_id,
+            models_procurement.PurchaseOrder.created_at >= start_date
+        )
+    )
+    total_purchases = po_result.scalar() or 0
+    
+    # Get order count
+    order_count_result = await db.execute(
+        select(func.count(models_procurement.PurchaseOrder.id)).where(
+            models_procurement.PurchaseOrder.tenant_id == current_user.tenant_id,
+            models_procurement.PurchaseOrder.created_at >= start_date
+        )
+    )
+    total_orders = order_count_result.scalar() or 0
+    
+    # Get active vendors
+    vendor_result = await db.execute(
+        select(func.count(func.distinct(models_procurement.PurchaseOrder.vendor_id))).where(
+            models_procurement.PurchaseOrder.tenant_id == current_user.tenant_id,
+            models_procurement.PurchaseOrder.created_at >= start_date
+        )
+    )
+    active_vendors = vendor_result.scalar() or 0
+    
+    return {
+        "total_purchases": total_purchases,
+        "total_orders": total_orders,
+        "active_vendors": active_vendors,
+        "avg_lead_time": 7,  # Mock for now
+        "growth_percent": 0  # Would need previous period data
+    }
+
+
+# ============ SUPPLIER ITEMS ============
+
+@router.post("/supplier-items")
+async def create_supplier_item(
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Link a product to a vendor with pricing"""
+    from models.models_procurement import SupplierItem
+    
+    supplier_item = SupplierItem(
+        id=uuid.uuid4(),
+        tenant_id=current_user.tenant_id,
+        vendor_id=payload.get("vendor_id"),
+        product_id=payload.get("product_id"),
+        agreed_price=payload.get("agreed_price", 0),
+        lead_time_days=payload.get("lead_time_days", 7),
+        min_order_qty=payload.get("min_order_qty", 1),
+        is_preferred=payload.get("is_preferred", False)
+    )
+    db.add(supplier_item)
+    
+    try:
+        await db.commit()
+        return {"message": "Supplier item linked"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+from datetime import timedelta

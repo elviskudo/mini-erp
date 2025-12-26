@@ -3,13 +3,13 @@
     <!-- Mobile Sidebar Backdrop -->
     <div 
       v-if="isSidebarOpen" 
-      class="fixed inset-0 bg-black/50 z-40 md:hidden"
+      class="fixed inset-0 bg-black/50 z-[9998] md:hidden"
       @click="isSidebarOpen = false"
     ></div>
 
-    <!-- Sidebar -->
+    <!-- Sidebar - with high z-index for popup menus -->
     <aside 
-      class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r border-gray-200 flex flex-col z-50 transform transition-transform duration-200 ease-in-out"
+      class="fixed md:static inset-y-0 left-0 w-64 bg-white border-r border-gray-200 flex flex-col z-[9999] transform transition-transform duration-200 ease-in-out"
       :class="[
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
       ]"
@@ -25,59 +25,8 @@
         />
       </div>
 
-      <nav class="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-        <template v-for="link in links" :key="link.label">
-          <!-- Direct Link -->
-          <NuxtLink 
-            v-if="!link.children"
-            :to="link.to"
-            class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-            :class="[
-              $route.path === link.to 
-                ? 'bg-primary-50 text-primary-700' 
-                : 'text-gray-700 hover:bg-gray-100'
-            ]"
-            @click="closeSidebarOnMobile"
-          >
-            <UIcon :name="link.icon" class="w-5 h-5 flex-shrink-0" />
-            <span>{{ link.label }}</span>
-          </NuxtLink>
-          
-          <!-- Collapsible Menu -->
-          <div v-else>
-            <button 
-              @click="toggleMenu(link.label)"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-            >
-              <div class="flex items-center gap-3">
-                <UIcon :name="link.icon" class="w-5 h-5 flex-shrink-0" />
-                <span>{{ link.label }}</span>
-              </div>
-              <UIcon 
-                :name="openMenus.includes(link.label) ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'" 
-                class="w-4 h-4 flex-shrink-0 transition-transform" 
-              />
-            </button>
-            
-            <!-- Children -->
-            <div v-show="openMenus.includes(link.label)" class="ml-8 mt-1 space-y-1">
-              <NuxtLink 
-                v-for="child in link.children" 
-                :key="child.to"
-                :to="child.to"
-                class="block px-3 py-2 rounded-lg text-sm transition-colors"
-                :class="[
-                  $route.path === child.to 
-                    ? 'bg-primary-50 text-primary-700 font-medium' 
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                ]"
-                @click="closeSidebarOnMobile"
-              >
-                {{ child.label }}
-              </NuxtLink>
-            </div>
-          </div>
-        </template>
+      <nav class="flex-1 px-4 py-4 space-y-1 overflow-y-auto overflow-x-visible">
+        <MenuItems :items="links" @item-click="closeSidebarOnMobile" />
       </nav>
 
       <div class="p-4 border-t border-gray-200">
@@ -140,7 +89,7 @@
             </div>
         </header>
 
-      <main class="flex-1 overflow-y-auto p-4 md:p-6">
+      <main class="flex-1 overflow-y-auto p-4 md:p-6 relative z-0">
         <slot />
       </main>
     </div>
@@ -177,18 +126,6 @@ const userInitials = computed(() => {
     const name = authStore.user?.username || 'U'
     return name.substring(0, 2).toUpperCase()
 })
-
-// Collapsible menu state
-const openMenus = ref<string[]>([])
-
-const toggleMenu = (label: string) => {
-    const index = openMenus.value.indexOf(label)
-    if (index === -1) {
-        openMenus.value.push(label)
-    } else {
-        openMenus.value.splice(index, 1)
-    }
-}
 
 // Menu state - fetched from API
 const links = ref<any[]>([])

@@ -1,10 +1,17 @@
 <template>
   <div class="space-y-6">
-    <div class="flex items-center gap-4">
-      <UButton icon="i-heroicons-arrow-left" variant="ghost" to="/inventory/opname" />
-      <div>
-        <h2 class="text-xl font-bold">Review & Approval</h2>
-        <p class="text-gray-500">Review and approve stock adjustments</p>
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <UButton icon="i-heroicons-arrow-left" variant="ghost" to="/inventory/opname" />
+        <div>
+          <h2 class="text-xl font-bold">Review & Approval</h2>
+          <p class="text-gray-500">Review and approve stock adjustments</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData('csv')">CSV</UButton>
+        <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" @click="exportData('xlsx')">XLS</UButton>
+        <UButton icon="i-heroicons-document" variant="outline" size="sm" @click="exportData('pdf')">PDF</UButton>
       </div>
     </div>
 
@@ -12,7 +19,14 @@
     <UCard>
       <template #header>Pending Review & Approval</template>
       
-      <UTable :columns="columns" :rows="pendingOpnames" :loading="loading">
+      <DataTable 
+        :columns="columns" 
+        :rows="pendingOpnames" 
+        :loading="loading"
+        searchable
+        :search-keys="['opname_number', 'warehouse.name']"
+        empty-message="No pending reviews"
+      >
         <template #opname_number-data="{ row }">
           <span class="font-mono">{{ row.opname_number || row.id?.substring(0, 8) }}</span>
         </template>
@@ -35,18 +49,14 @@
         </template>
         <template #actions-data="{ row }">
           <div class="flex gap-1">
-            <UButton icon="i-heroicons-eye" size="xs" color="gray" variant="ghost" @click="viewDetails(row)" />
-            <UButton v-if="row.status === 'Reviewed'" icon="i-heroicons-check" size="xs" color="green" @click="approve(row)" title="Approve" />
-            <UButton v-if="row.status === 'Reviewed'" icon="i-heroicons-x-mark" size="xs" color="red" variant="ghost" @click="reject(row)" title="Reject" />
-            <UButton v-if="row.status === 'Approved'" icon="i-heroicons-arrow-up-tray" size="xs" color="primary" @click="postAdjustments(row)" title="Post" />
+            <UButton icon="i-heroicons-eye" size="xs" color="gray" variant="ghost" @click="viewDetails(row)" title="View Details" />
+            <UButton v-if="row.status === 'Counting Done'" icon="i-heroicons-document-check" size="xs" color="purple" variant="ghost" @click="submitReview(row)" title="Submit Review" />
+            <UButton v-if="row.status === 'Reviewed'" icon="i-heroicons-check-circle" size="xs" color="green" @click="openApproveModal(row)" title="Approve" />
+            <UButton v-if="row.status === 'Reviewed'" icon="i-heroicons-x-circle" size="xs" color="red" variant="ghost" @click="openRejectModal(row)" title="Reject" />
+            <UButton v-if="row.status === 'Approved'" icon="i-heroicons-arrow-up-tray" size="xs" color="primary" @click="openPostModal(row)" title="Post Adjustments" />
           </div>
         </template>
-      </UTable>
-      
-      <div v-if="!loading && pendingOpnames.length === 0" class="text-center py-8 text-gray-500">
-        <UIcon name="i-heroicons-inbox" class="w-12 h-12 mx-auto mb-2" />
-        <p>No pending reviews</p>
-      </div>
+      </DataTable>
     </UCard>
 
     <!-- Detail Modal -->
@@ -86,6 +96,8 @@
             <thead class="sticky top-0 bg-white">
               <tr class="border-b">
                 <th class="text-left py-2">Product</th>
+                <th class="text-left py-2">Code</th>
+                <th class="text-left py-2">UoM</th>
                 <th class="text-right py-2">System</th>
                 <th class="text-right py-2">Counted</th>
                 <th class="text-right py-2">Variance</th>
@@ -96,6 +108,8 @@
             <tbody>
               <tr v-for="item in varianceItems" :key="item.id" class="border-b">
                 <td class="py-2">{{ item.product?.name }}</td>
+                <td class="py-2 text-gray-500">{{ item.product?.code }}</td>
+                <td class="py-2 text-gray-500">{{ item.product?.uom || 'pcs' }}</td>
                 <td class="py-2 text-right font-mono">{{ item.system_qty }}</td>
                 <td class="py-2 text-right font-mono">{{ item.counted_qty }}</td>
                 <td class="py-2 text-right font-mono" :class="item.variance < 0 ? 'text-red-600' : 'text-green-600'">
@@ -113,25 +127,158 @@
         <template #footer>
           <div class="flex justify-end gap-2">
             <UButton color="gray" variant="ghost" @click="showDetailModal = false">Close</UButton>
-            <UButton v-if="selectedOpname.status === 'Reviewed'" color="red" variant="outline" @click="reject(selectedOpname)">Reject</UButton>
-            <UButton v-if="selectedOpname.status === 'Reviewed'" color="green" @click="approve(selectedOpname)">Approve</UButton>
-            <UButton v-if="selectedOpname.status === 'Approved'" color="primary" @click="postAdjustments(selectedOpname)">Post Adjustments</UButton>
+            <UButton v-if="selectedOpname.status === 'Counting Done'" color="purple" @click="submitReview(selectedOpname)">Submit Review</UButton>
+            <UButton v-if="selectedOpname.status === 'Reviewed'" color="red" variant="outline" @click="openRejectModal(selectedOpname)">Reject</UButton>
+            <UButton v-if="selectedOpname.status === 'Reviewed'" color="green" @click="openApproveModal(selectedOpname)">Approve</UButton>
+            <UButton v-if="selectedOpname.status === 'Approved'" color="primary" @click="openPostModal(selectedOpname)">Post Adjustments</UButton>
           </div>
         </template>
       </UCard>
     </UModal>
 
-    <!-- Reject Modal -->
+    <!-- SweetAlert: Approve Modal -->
+    <UModal v-model="showApproveModal">
+      <UCard>
+        <template #header>
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+              <UIcon name="i-heroicons-check-circle" class="text-green-600 w-7 h-7" />
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-green-700">Approve Opname</h3>
+              <p class="text-sm text-gray-500">{{ opnameToAction?.opname_number }}</p>
+            </div>
+          </div>
+        </template>
+        
+        <div class="space-y-4">
+          <p>Are you sure you want to approve this opname?</p>
+          
+          <div class="p-4 bg-green-50 rounded-lg">
+            <div class="flex items-center gap-2 text-green-800 font-medium mb-2">
+              <UIcon name="i-heroicons-clipboard-document-check" class="w-5 h-5" />
+              <span>This will:</span>
+            </div>
+            <ul class="ml-7 list-disc text-sm text-green-700 space-y-1">
+              <li>Mark this opname as <strong>Approved</strong></li>
+              <li>Enable the <strong>Post Adjustments</strong> action</li>
+              <li>Record your approval timestamp</li>
+            </ul>
+          </div>
+          
+          <div class="p-3 bg-gray-50 rounded-lg text-sm">
+            <div class="grid grid-cols-2 gap-2">
+              <div><span class="text-gray-500">Variance Items:</span> <strong>{{ opnameToAction?.items_with_variance }}</strong></div>
+              <div><span class="text-gray-500">Net Variance:</span> <strong :class="(opnameToAction?.total_variance_value || 0) < 0 ? 'text-red-600' : 'text-green-600'">{{ formatCurrency(opnameToAction?.total_variance_value || 0) }}</strong></div>
+            </div>
+          </div>
+        </div>
+        
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton color="gray" variant="ghost" @click="showApproveModal = false">Cancel</UButton>
+            <UButton color="green" :loading="submitting" @click="confirmApprove">
+              <UIcon name="i-heroicons-check" class="mr-1" /> Approve
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- SweetAlert: Reject Modal -->
     <UModal v-model="showRejectModal">
       <UCard>
-        <template #header>Reject Opname</template>
-        <UFormGroup label="Reason for rejection">
-          <UTextarea v-model="rejectReason" rows="3" placeholder="Provide reason..." />
-        </UFormGroup>
+        <template #header>
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+              <UIcon name="i-heroicons-x-circle" class="text-red-600 w-7 h-7" />
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-red-700">Reject Opname</h3>
+              <p class="text-sm text-gray-500">{{ opnameToAction?.opname_number }}</p>
+            </div>
+          </div>
+        </template>
+        
+        <div class="space-y-4">
+          <div class="p-4 bg-red-50 rounded-lg">
+            <div class="flex items-center gap-2 text-red-800 font-medium mb-2">
+              <UIcon name="i-heroicons-exclamation-triangle" class="w-5 h-5" />
+              <span>This will:</span>
+            </div>
+            <ul class="ml-7 list-disc text-sm text-red-700 space-y-1">
+              <li>Return status to <strong>Counting Done</strong></li>
+              <li>Require team to <strong>recount</strong> items</li>
+              <li>Add rejection notes to the opname</li>
+            </ul>
+          </div>
+          
+          <UFormGroup label="Reason for Rejection" required hint="Explain why the count needs to be redone" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UTextarea v-model="rejectReason" rows="3" placeholder="e.g., Several items have large unexplained variances..." />
+          </UFormGroup>
+        </div>
+        
         <template #footer>
           <div class="flex justify-end gap-2">
             <UButton color="gray" variant="ghost" @click="showRejectModal = false">Cancel</UButton>
-            <UButton color="red" @click="confirmReject" :loading="submitting">Reject</UButton>
+            <UButton color="red" :loading="submitting" :disabled="!rejectReason" @click="confirmReject">
+              <UIcon name="i-heroicons-x-mark" class="mr-1" /> Reject
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <!-- SweetAlert: Post Modal -->
+    <UModal v-model="showPostModal">
+      <UCard>
+        <template #header>
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+              <UIcon name="i-heroicons-arrow-up-tray" class="text-blue-600 w-7 h-7" />
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-blue-700">Post Adjustments</h3>
+              <p class="text-sm text-gray-500">{{ opnameToAction?.opname_number }}</p>
+            </div>
+          </div>
+        </template>
+        
+        <div class="space-y-4">
+          <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div class="flex items-center gap-2 text-yellow-800 font-medium mb-2">
+              <UIcon name="i-heroicons-exclamation-triangle" class="w-5 h-5" />
+              <span>Warning: This action is irreversible!</span>
+            </div>
+          </div>
+          
+          <div class="p-4 bg-blue-50 rounded-lg">
+            <div class="flex items-center gap-2 text-blue-800 font-medium mb-2">
+              <UIcon name="i-heroicons-document-arrow-up" class="w-5 h-5" />
+              <span>This will:</span>
+            </div>
+            <ul class="ml-7 list-disc text-sm text-blue-700 space-y-1">
+              <li>Create <strong>Inventory Movement</strong> records</li>
+              <li>Update <strong>Stock Quantities</strong> in the system</li>
+              <li>Mark opname as <strong>Posted</strong></li>
+              <li>Generate <strong>Adjustment Journal</strong> entries</li>
+            </ul>
+          </div>
+          
+          <div class="p-3 bg-gray-50 rounded-lg text-sm">
+            <div class="grid grid-cols-2 gap-2">
+              <div><span class="text-gray-500">Items to Adjust:</span> <strong>{{ opnameToAction?.items_with_variance }}</strong></div>
+              <div><span class="text-gray-500">Net Adjustment:</span> <strong :class="(opnameToAction?.total_variance_value || 0) < 0 ? 'text-red-600' : 'text-green-600'">{{ formatCurrency(opnameToAction?.total_variance_value || 0) }}</strong></div>
+            </div>
+          </div>
+        </div>
+        
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton color="gray" variant="ghost" @click="showPostModal = false">Cancel</UButton>
+            <UButton color="primary" :loading="submitting" @click="confirmPost">
+              <UIcon name="i-heroicons-arrow-up-tray" class="mr-1" /> Post Adjustments
+            </UButton>
           </div>
         </template>
       </UCard>
@@ -147,16 +294,19 @@ const loading = ref(false)
 const submitting = ref(false)
 const pendingOpnames = ref<any[]>([])
 const selectedOpname = ref<any>(null)
+const opnameToAction = ref<any>(null)
 const showDetailModal = ref(false)
+const showApproveModal = ref(false)
 const showRejectModal = ref(false)
+const showPostModal = ref(false)
 const rejectReason = ref('')
 
 const columns = [
-  { key: 'opname_number', label: 'Number' },
-  { key: 'date', label: 'Date' },
+  { key: 'opname_number', label: 'Number', sortable: true },
+  { key: 'date', label: 'Date', sortable: true },
   { key: 'warehouse', label: 'Warehouse' },
   { key: 'status', label: 'Status' },
-  { key: 'variance', label: 'Total Variance' },
+  { key: 'variance', label: 'Total Variance', sortable: true },
   { key: 'items', label: 'Variance Items' },
   { key: 'actions', label: '' }
 ]
@@ -211,13 +361,11 @@ const viewDetails = async (opname: any) => {
   }
 }
 
-const approve = async (opname: any) => {
-  if (!confirm('Approve this opname for posting?')) return
-  
+const submitReview = async (opname: any) => {
   submitting.value = true
   try {
-    await $api.post('/opname/approve', { opname_id: opname.id, approved: true })
-    toast.add({ title: 'Approved', description: 'Ready for posting', color: 'green' })
+    await $api.post('/opname/review', { opname_id: opname.id })
+    toast.add({ title: 'Submitted', description: 'Opname submitted for approval', color: 'green' })
     showDetailModal.value = false
     await fetchPending()
   } catch (e: any) {
@@ -227,50 +375,126 @@ const approve = async (opname: any) => {
   }
 }
 
-const reject = (opname: any) => {
-  selectedOpname.value = opname
+const openApproveModal = (opname: any) => {
+  opnameToAction.value = opname
+  showApproveModal.value = true
+}
+
+const confirmApprove = async () => {
+  if (!opnameToAction.value) return
+  
+  submitting.value = true
+  try {
+    await $api.post('/opname/approve', { opname_id: opnameToAction.value.id, approved: true })
+    toast.add({ title: 'Approved!', description: 'Opname approved and ready for posting', color: 'green' })
+    showApproveModal.value = false
+    showDetailModal.value = false
+    await fetchPending()
+  } catch (e: any) {
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Approval failed', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+const openRejectModal = (opname: any) => {
+  opnameToAction.value = opname
   rejectReason.value = ''
   showRejectModal.value = true
 }
 
 const confirmReject = async () => {
-  if (!rejectReason.value) {
-    toast.add({ title: 'Error', description: 'Please provide a reason', color: 'red' })
-    return
-  }
+  if (!opnameToAction.value || !rejectReason.value) return
   
   submitting.value = true
   try {
     await $api.post('/opname/approve', { 
-      opname_id: selectedOpname.value.id, 
-      approved: false,
-      rejection_reason: rejectReason.value
+      opname_id: opnameToAction.value.id, 
+      approved: false, 
+      rejection_reason: rejectReason.value 
     })
-    toast.add({ title: 'Rejected', description: 'Sent back for recount', color: 'orange' })
+    toast.add({ title: 'Rejected', description: 'Opname returned for recount', color: 'orange' })
     showRejectModal.value = false
     showDetailModal.value = false
     await fetchPending()
   } catch (e: any) {
-    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed', color: 'red' })
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Rejection failed', color: 'red' })
   } finally {
     submitting.value = false
   }
 }
 
-const postAdjustments = async (opname: any) => {
-  if (!confirm('Post adjustments to inventory? This will update stock quantities.')) return
+const openPostModal = (opname: any) => {
+  opnameToAction.value = opname
+  showPostModal.value = true
+}
+
+const confirmPost = async () => {
+  if (!opnameToAction.value) return
   
   submitting.value = true
   try {
-    const res = await $api.post('/opname/post', { opname_id: opname.id })
-    toast.add({ title: 'Posted', description: `${res.data.adjustments_made} adjustments made`, color: 'green' })
+    await $api.post('/opname/post', { opname_id: opnameToAction.value.id })
+    toast.add({ title: 'Posted!', description: 'Stock adjustments have been applied', color: 'green' })
+    showPostModal.value = false
     showDetailModal.value = false
     await fetchPending()
   } catch (e: any) {
-    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed', color: 'red' })
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Post failed', color: 'red' })
   } finally {
     submitting.value = false
   }
+}
+
+// Export functions
+const exportData = (format: string) => {
+  const data = pendingOpnames.value.map((o: any) => ({
+    'Number': o.opname_number || '-',
+    'Date': formatDate(o.date),
+    'Warehouse': o.warehouse?.name || '-',
+    'Status': o.status,
+    'Total Items': o.total_items,
+    'Variance Items': o.items_with_variance,
+    'Net Variance': o.total_variance_value
+  }))
+  
+  if (format === 'csv') exportToCSV(data, 'review_approval')
+  else if (format === 'xlsx') exportToXLSX(data, 'review_approval')
+  else if (format === 'pdf') exportToPDF(data, 'Review & Approval', 'review_approval')
+}
+
+const exportToCSV = (data: any[], filename: string) => {
+  if (!data.length) return
+  const headers = Object.keys(data[0])
+  const csv = [headers.join(','), ...data.map(row => headers.map(h => `"${row[h] || ''}"`).join(','))].join('\n')
+  downloadFile(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), `${filename}.csv`)
+}
+
+const exportToXLSX = (data: any[], filename: string) => {
+  if (!data.length) return
+  const headers = Object.keys(data[0])
+  const html = `<table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>${data.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('')}</table>`
+  downloadFile(new Blob([html], { type: 'application/vnd.ms-excel' }), `${filename}.xls`)
+}
+
+const exportToPDF = (data: any[], title: string, filename: string) => {
+  if (!data.length) return
+  const headers = Object.keys(data[0])
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(`<html><head><title>${title}</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:12px}th{background:#f4f4f4}</style></head><body><h1>${title}</h1><p>Generated: ${new Date().toLocaleString()}</p><table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>${data.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('')}</table></body></html>`)
+    printWindow.document.close()
+    printWindow.print()
+  }
+}
+
+const downloadFile = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 onMounted(() => {

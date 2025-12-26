@@ -1,10 +1,17 @@
 <template>
   <div class="space-y-6">
-    <div class="flex items-center gap-4">
-      <UButton icon="i-heroicons-arrow-left" variant="ghost" to="/inventory/opname" />
-      <div>
-        <h2 class="text-xl font-bold">Variance Analysis</h2>
-        <p class="text-gray-500">Compare system vs counted quantities</p>
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <UButton icon="i-heroicons-arrow-left" variant="ghost" to="/inventory/opname" />
+        <div>
+          <h2 class="text-xl font-bold">Variance Analysis</h2>
+          <p class="text-gray-500">Compare system vs counted quantities</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData('csv')">CSV</UButton>
+        <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" @click="exportData('xlsx')">XLS</UButton>
+        <UButton icon="i-heroicons-document" variant="outline" size="sm" @click="exportData('pdf')">PDF</UButton>
       </div>
     </div>
 
@@ -61,7 +68,14 @@
         </div>
       </template>
       
-      <UTable :columns="columns" :rows="displayItems" :loading="loading">
+      <DataTable 
+        :columns="columns" 
+        :rows="displayItems" 
+        :loading="loading"
+        searchable
+        :search-keys="['product.name', 'product.code', 'location.name']"
+        empty-message="No items found"
+      >
         <template #product-data="{ row }">
           <div>
             <p class="font-medium">{{ row.product?.name || 'Unknown' }}</p>
@@ -70,6 +84,9 @@
         </template>
         <template #location-data="{ row }">
           {{ row.location?.name || '-' }}
+        </template>
+        <template #uom-data="{ row }">
+          <span class="text-gray-600">{{ row.product?.uom || row.uom || 'pcs' }}</span>
         </template>
         <template #system_qty-data="{ row }">
           <span class="font-mono">{{ row.system_qty }}</span>
@@ -83,10 +100,17 @@
           </span>
           <span v-else class="text-gray-400">0</span>
         </template>
+        <template #variance_pct-data="{ row }">
+          <span v-if="row.variance_pct !== 0" :class="row.variance_pct < 0 ? 'text-red-600' : 'text-green-600'">
+            {{ row.variance_pct > 0 ? '+' : '' }}{{ row.variance_pct.toFixed(1) }}%
+          </span>
+          <span v-else class="text-gray-400">0%</span>
+        </template>
         <template #variance_value-data="{ row }">
           <span v-if="row.variance_value !== 0" :class="row.variance_value < 0 ? 'text-red-600' : 'text-green-600'">
             {{ formatCurrency(row.variance_value) }}
           </span>
+          <span v-else class="text-gray-400">-</span>
         </template>
         <template #reason-data="{ row }">
           <USelect 
@@ -99,7 +123,7 @@
           />
           <span v-else>{{ row.variance_reason || '-' }}</span>
         </template>
-      </UTable>
+      </DataTable>
     </UCard>
 
     <!-- Actions -->
@@ -128,12 +152,14 @@ const varianceReasons = [
 ]
 
 const columns = [
-  { key: 'product', label: 'Product' },
+  { key: 'product', label: 'Product', sortable: true },
   { key: 'location', label: 'Location' },
-  { key: 'system_qty', label: 'System' },
-  { key: 'counted_qty', label: 'Counted' },
-  { key: 'variance', label: 'Variance' },
-  { key: 'variance_value', label: 'Value' },
+  { key: 'uom', label: 'UoM' },
+  { key: 'system_qty', label: 'System', sortable: true },
+  { key: 'counted_qty', label: 'Counted', sortable: true },
+  { key: 'variance', label: 'Variance', sortable: true },
+  { key: 'variance_pct', label: '%' },
+  { key: 'variance_value', label: 'Value', sortable: true },
   { key: 'reason', label: 'Reason' }
 ]
 
@@ -146,11 +172,16 @@ const opnameOptions = computed(() =>
 
 const displayItems = computed(() => {
   if (!selectedOpname.value?.details) return []
-  const items = selectedOpname.value.details.map((d: any) => ({
-    ...d,
-    variance: d.counted_qty != null ? d.counted_qty - d.system_qty : 0,
-    variance_value: d.variance_value || 0
-  }))
+  const items = selectedOpname.value.details.map((d: any) => {
+    const variance = d.counted_qty != null ? d.counted_qty - d.system_qty : 0
+    const variance_pct = d.system_qty > 0 && d.counted_qty != null ? (variance / d.system_qty) * 100 : 0
+    return {
+      ...d,
+      variance,
+      variance_pct,
+      variance_value: d.variance_value || 0
+    }
+  })
   
   return showOnlyVariance.value ? items.filter((i: any) => i.variance !== 0) : items
 })
@@ -225,6 +256,60 @@ const submitForReview = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+// Export functions
+const exportData = (format: string) => {
+  const data = displayItems.value.map((i: any) => ({
+    'Product': i.product?.name || 'Unknown',
+    'Code': i.product?.code || '-',
+    'Location': i.location?.name || '-',
+    'UoM': i.product?.uom || i.uom || 'pcs',
+    'System Qty': i.system_qty,
+    'Counted Qty': i.counted_qty ?? '-',
+    'Variance': i.variance,
+    'Variance %': `${i.variance_pct.toFixed(1)}%`,
+    'Value': i.variance_value,
+    'Reason': i.variance_reason || '-'
+  }))
+  
+  if (format === 'csv') exportToCSV(data, 'variance_analysis')
+  else if (format === 'xlsx') exportToXLSX(data, 'variance_analysis')
+  else if (format === 'pdf') exportToPDF(data, 'Variance Analysis', 'variance_analysis')
+}
+
+const exportToCSV = (data: any[], filename: string) => {
+  if (!data.length) return
+  const headers = Object.keys(data[0])
+  const csv = [headers.join(','), ...data.map(row => headers.map(h => `"${row[h] || ''}"`).join(','))].join('\n')
+  downloadFile(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), `${filename}.csv`)
+}
+
+const exportToXLSX = (data: any[], filename: string) => {
+  if (!data.length) return
+  const headers = Object.keys(data[0])
+  const html = `<table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>${data.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('')}</table>`
+  downloadFile(new Blob([html], { type: 'application/vnd.ms-excel' }), `${filename}.xls`)
+}
+
+const exportToPDF = (data: any[], title: string, filename: string) => {
+  if (!data.length) return
+  const headers = Object.keys(data[0])
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(`<html><head><title>${title}</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:12px}th{background:#f4f4f4}</style></head><body><h1>${title}</h1><p>Generated: ${new Date().toLocaleString()}</p><table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>${data.map(row => `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`).join('')}</table></body></html>`)
+    printWindow.document.close()
+    printWindow.print()
+  }
+}
+
+const downloadFile = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 onMounted(() => {

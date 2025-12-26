@@ -98,7 +98,7 @@ class StockOpname(Base):
     
     opname_number = Column(String(50), nullable=True)  # Auto-generated: OPN-YYYYMMDD-001
     date = Column(DateTime, default=datetime.utcnow)
-    status = Column(Enum(OpnameStatus), default=OpnameStatus.SCHEDULED)
+    status = Column(String(50), default="Scheduled")  # Scheduled, In Progress, Counting Done, Reviewed, Approved, Posted, Cancelled
     notes = Column(Text, nullable=True)
     
     # Progress tracking

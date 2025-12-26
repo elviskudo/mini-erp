@@ -145,3 +145,145 @@ class ProductionOrderWorkCenter(Base):
     
     production_order = relationship("ProductionOrder", back_populates="work_centers")
     work_center = relationship("WorkCenter")
+
+
+# ============ ROUTING ============
+
+class Routing(Base):
+    """Production routing - defines steps to produce a product"""
+    __tablename__ = "routings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    name = Column(String, nullable=False)  # e.g. "Standard Assembly Process"
+    version = Column(String, default="1.0")
+    is_active = Column(Boolean, default=True)
+    total_time_hours = Column(Float, default=0.0)  # Calculated from steps
+    
+    product = relationship("Product", backref="routings")
+    steps = relationship("RoutingStep", back_populates="routing", order_by="RoutingStep.sequence", cascade="all, delete-orphan")
+
+
+class RoutingStep(Base):
+    """Individual step in a routing"""
+    __tablename__ = "routing_steps"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    routing_id = Column(UUID(as_uuid=True), ForeignKey("routings.id"), nullable=False)
+    work_center_id = Column(UUID(as_uuid=True), ForeignKey("work_centers.id"), nullable=False)
+    
+    sequence = Column(Integer, nullable=False)  # Step order: 10, 20, 30...
+    operation_name = Column(String, nullable=False)  # e.g. "Cutting", "Assembly", "Finishing"
+    description = Column(Text, nullable=True)
+    setup_time_mins = Column(Float, default=0.0)  # Setup/preparation time
+    run_time_mins = Column(Float, default=0.0)  # Time per unit
+    
+    routing = relationship("Routing", back_populates="steps")
+    work_center = relationship("WorkCenter")
+
+
+# ============ WORK ORDER ============
+
+class WorkOrderStatus(str, enum.Enum):
+    PENDING = "Pending"
+    IN_PROGRESS = "In Progress"
+    COMPLETED = "Completed"
+    ON_HOLD = "On Hold"
+    CANCELLED = "Cancelled"
+
+
+class WorkOrder(Base):
+    """Work order for a specific production step"""
+    __tablename__ = "work_orders"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    production_order_id = Column(UUID(as_uuid=True), ForeignKey("production_orders.id"), nullable=False)
+    routing_step_id = Column(UUID(as_uuid=True), ForeignKey("routing_steps.id"), nullable=True)
+    work_center_id = Column(UUID(as_uuid=True), ForeignKey("work_centers.id"), nullable=False)
+    
+    work_order_no = Column(String, nullable=False, index=True)  # WO-YYYYMMDD-001
+    sequence = Column(Integer, default=10)
+    operation_name = Column(String, nullable=False)
+    status = Column(String, default="Pending")  # Pending, In Progress, Completed
+    
+    # Quantities
+    planned_qty = Column(Float, default=0.0)
+    completed_qty = Column(Float, default=0.0)
+    scrap_qty = Column(Float, default=0.0)
+    
+    # Time tracking
+    planned_start = Column(DateTime, nullable=True)
+    planned_end = Column(DateTime, nullable=True)
+    actual_start = Column(DateTime, nullable=True)
+    actual_end = Column(DateTime, nullable=True)
+    
+    # Labor
+    assigned_to = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    labor_hours = Column(Float, default=0.0)
+    
+    notes = Column(Text, nullable=True)
+    
+    production_order = relationship("ProductionOrder", backref="work_orders")
+    work_center = relationship("WorkCenter")
+    assignee = relationship("User")
+
+
+# ============ QUALITY CHECK ============
+
+class QCStatus(str, enum.Enum):
+    PENDING = "Pending"
+    PASSED = "Passed"
+    FAILED = "Failed"
+    PARTIAL = "Partial Pass"
+
+
+class QualityCheck(Base):
+    """Quality check for production output"""
+    __tablename__ = "quality_checks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    production_order_id = Column(UUID(as_uuid=True), ForeignKey("production_orders.id"), nullable=True)
+    work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id"), nullable=True)
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    
+    qc_number = Column(String, nullable=False, index=True)  # QC-YYYYMMDD-001
+    check_date = Column(DateTime, nullable=False)
+    status = Column(String, default="Pending")  # Pending, Passed, Failed, Partial Pass
+    
+    # Quantities
+    inspected_qty = Column(Float, default=0.0)
+    passed_qty = Column(Float, default=0.0)
+    failed_qty = Column(Float, default=0.0)
+    
+    # Inspector
+    inspector_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
+    # Results
+    notes = Column(Text, nullable=True)
+    defect_types = Column(Text, nullable=True)  # JSON array of defect codes
+    
+    production_order = relationship("ProductionOrder", backref="quality_checks")
+    product = relationship("Product")
+    inspector = relationship("User")
+
+
+class QCCheckpoint(Base):
+    """Individual checkpoint in a quality inspection"""
+    __tablename__ = "qc_checkpoints"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    quality_check_id = Column(UUID(as_uuid=True), ForeignKey("quality_checks.id"), nullable=False)
+    
+    checkpoint_name = Column(String, nullable=False)  # e.g. "Visual Inspection", "Weight Check"
+    specification = Column(String, nullable=True)  # Expected value/range
+    actual_value = Column(String, nullable=True)  # Measured value
+    passed = Column(Boolean, nullable=True)  # null=not checked, true=pass, false=fail
+    notes = Column(Text, nullable=True)
+    
+    quality_check = relationship("QualityCheck", backref="checkpoints")
+

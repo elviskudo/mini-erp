@@ -28,13 +28,18 @@ async def create_schedule(
     current_user: models.User = Depends(get_current_user)
 ):
     """Create a new opname schedule"""
+    # Convert timezone-aware datetime to naive (remove timezone info)
+    scheduled_date = request.scheduled_date
+    if scheduled_date.tzinfo is not None:
+        scheduled_date = scheduled_date.replace(tzinfo=None)
+    
     schedule = models_opname.OpnameSchedule(
         tenant_id=current_user.tenant_id,
         warehouse_id=request.warehouse_id,
         name=request.name,
         description=request.description,
         frequency=models_opname.OpnameFrequency(request.frequency) if request.frequency else models_opname.OpnameFrequency.MONTHLY,
-        scheduled_date=request.scheduled_date,
+        scheduled_date=scheduled_date,
         start_time=request.start_time,
         estimated_duration_hours=request.estimated_duration_hours,
         count_all_items=request.count_all_items,
@@ -44,8 +49,16 @@ async def create_schedule(
     )
     db.add(schedule)
     await db.commit()
-    await db.refresh(schedule)
-    return schedule
+    
+    # Reload with relationships to avoid MissingGreenlet error
+    query = select(models_opname.OpnameSchedule).where(
+        models_opname.OpnameSchedule.id == schedule.id
+    ).options(
+        selectinload(models_opname.OpnameSchedule.warehouse),
+        selectinload(models_opname.OpnameSchedule.assignments)
+    )
+    result = await db.execute(query)
+    return result.scalar_one()
 
 
 @router.get("/schedules", response_model=List[schemas_opname.ScheduleResponse])
@@ -68,6 +81,32 @@ async def list_schedules(
     result = await db.execute(query)
     return result.scalars().all()
 
+
+@router.delete("/schedule/{schedule_id}")
+async def delete_schedule(
+    schedule_id: uuid.UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete an opname schedule and its assignments"""
+    schedule = await db.get(models_opname.OpnameSchedule, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    if schedule.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Delete assignments first
+    await db.execute(
+        models_opname.OpnameAssignment.__table__.delete().where(
+            models_opname.OpnameAssignment.schedule_id == schedule_id
+        )
+    )
+    
+    # Delete schedule
+    await db.delete(schedule)
+    await db.commit()
+    
+    return {"status": "Deleted", "id": str(schedule_id)}
 
 @router.post("/assign-team")
 async def assign_team(
@@ -112,7 +151,7 @@ async def create_opname(
         warehouse_id=request.warehouse_id,
         schedule_id=request.schedule_id,
         opname_number=opname_number,
-        status=models_opname.OpnameStatus.SCHEDULED,
+        status="Scheduled",  # Use string value to match database enum
         notes=request.notes,
         tenant_id=current_user.tenant_id,
         created_by=current_user.id
@@ -158,8 +197,17 @@ async def create_opname(
     new_opname.total_system_value = total_system_value
 
     await db.commit()
-    await db.refresh(new_opname)
-    return new_opname
+    
+    # Reload with relationships to avoid MissingGreenlet error
+    query = select(models_opname.StockOpname).where(
+        models_opname.StockOpname.id == new_opname.id
+    ).options(
+        selectinload(models_opname.StockOpname.warehouse),
+        selectinload(models_opname.StockOpname.details).selectinload(models_opname.StockOpnameDetail.product),
+        selectinload(models_opname.StockOpname.details).selectinload(models_opname.StockOpnameDetail.location)
+    )
+    result = await db.execute(query)
+    return result.scalar_one()
 
 
 @router.post("/start-counting")
@@ -172,10 +220,10 @@ async def start_counting(
     opname = await db.get(models_opname.StockOpname, request.opname_id)
     if not opname:
         raise HTTPException(status_code=404, detail="Opname not found")
-    if opname.status not in [models_opname.OpnameStatus.SCHEDULED]:
+    if opname.status not in ["Scheduled"]:
         raise HTTPException(status_code=400, detail=f"Cannot start counting. Current status: {opname.status}")
     
-    opname.status = models_opname.OpnameStatus.IN_PROGRESS
+    opname.status = "In Progress"
     opname.counting_started_at = datetime.utcnow()
     await db.commit()
     
@@ -194,8 +242,8 @@ async def update_count(
         raise HTTPException(status_code=404, detail="Opname not found")
     
     # Update opname status to IN_PROGRESS if still SCHEDULED
-    if opname.status == models_opname.OpnameStatus.SCHEDULED:
-        opname.status = models_opname.OpnameStatus.IN_PROGRESS
+    if opname.status == "Scheduled":
+        opname.status = "In Progress"
         opname.counting_started_at = datetime.utcnow()
     
     counted = 0
@@ -247,7 +295,7 @@ async def complete_counting(
     if not opname:
         raise HTTPException(status_code=404, detail="Opname not found")
     
-    opname.status = models_opname.OpnameStatus.COUNTING_DONE
+    opname.status = "Counting Done"
     opname.counting_completed_at = datetime.utcnow()
     
     # Calculate final totals
@@ -277,10 +325,10 @@ async def review_opname(
     if not opname:
         raise HTTPException(status_code=404, detail="Opname not found")
     
-    if opname.status != models_opname.OpnameStatus.COUNTING_DONE:
-        raise HTTPException(status_code=400, detail="Opname must be in COUNTING_DONE status to review")
+    if opname.status != "Counting Done":
+        raise HTTPException(status_code=400, detail="Opname must be in Counting Done status to review")
     
-    opname.status = models_opname.OpnameStatus.REVIEWED
+    opname.status = "Reviewed"
     opname.reviewed_at = datetime.utcnow()
     opname.reviewed_by = current_user.id
     if request.notes:
@@ -301,16 +349,17 @@ async def approve_opname(
     if not opname:
         raise HTTPException(status_code=404, detail="Opname not found")
     
-    if opname.status != models_opname.OpnameStatus.REVIEWED:
-        raise HTTPException(status_code=400, detail="Opname must be REVIEWED before approval")
+    if opname.status != "Reviewed":
+        raise HTTPException(status_code=400, detail="Opname must be Reviewed before approval")
     
     if request.approved:
-        opname.status = models_opname.OpnameStatus.APPROVED
+        opname.status = "Approved"
         opname.approved_at = datetime.utcnow()
         opname.approved_by = current_user.id
+        await db.commit()
         return {"status": "Approved", "ready_for_posting": True}
     else:
-        opname.status = models_opname.OpnameStatus.COUNTING_DONE  # Send back for recount
+        opname.status = "Counting Done"  # Send back for recount
         opname.notes = (opname.notes or "") + f"\n[Rejected] {request.rejection_reason}"
         await db.commit()
         return {"status": "Rejected", "reason": request.rejection_reason}
@@ -331,8 +380,8 @@ async def post_opname(
 
     if not opname:
         raise HTTPException(status_code=404, detail="Opname not found")
-    if opname.status not in [models_opname.OpnameStatus.APPROVED, models_opname.OpnameStatus.REVIEWED]:
-        raise HTTPException(status_code=400, detail=f"Cannot post. Status must be APPROVED or REVIEWED. Current: {opname.status}")
+    if opname.status not in ["Approved", "Reviewed"]:
+        raise HTTPException(status_code=400, detail=f"Cannot post. Status must be Approved or Reviewed. Current: {opname.status}")
 
     adjustments_made = 0
     for detail in opname.details:
@@ -359,7 +408,7 @@ async def post_opname(
                 )
                 adjustments_made += 1
 
-    opname.status = models_opname.OpnameStatus.POSTED
+    opname.status = "Posted"
     opname.posted_at = datetime.utcnow()
     opname.posted_by = current_user.id
     
@@ -380,15 +429,13 @@ async def list_opnames(
         models_opname.StockOpname.tenant_id == current_user.tenant_id
     ).options(
         selectinload(models_opname.StockOpname.warehouse),
-        selectinload(models_opname.StockOpname.details).selectinload(models_opname.StockOpnameDetail.product)
+        selectinload(models_opname.StockOpname.details).selectinload(models_opname.StockOpnameDetail.product),
+        selectinload(models_opname.StockOpname.details).selectinload(models_opname.StockOpnameDetail.location)
     ).order_by(models_opname.StockOpname.date.desc())
     
     if status:
-        try:
-            status_enum = models_opname.OpnameStatus(status)
-            query = query.where(models_opname.StockOpname.status == status_enum)
-        except:
-            pass
+        # Use string comparison directly since status is now VARCHAR
+        query = query.where(models_opname.StockOpname.status == status)
     
     result = await db.execute(query)
     return result.scalars().all()
@@ -482,14 +529,14 @@ async def get_evaluation_stats(
     # Completed opnames
     completed_query = select(func.count(models_opname.StockOpname.id)).where(
         models_opname.StockOpname.tenant_id == current_user.tenant_id,
-        models_opname.StockOpname.status == models_opname.OpnameStatus.POSTED
+        models_opname.StockOpname.status == "Posted"
     )
     completed = (await db.execute(completed_query)).scalar() or 0
     
     # Total variance
     variance_query = select(func.sum(models_opname.StockOpname.total_variance_value)).where(
         models_opname.StockOpname.tenant_id == current_user.tenant_id,
-        models_opname.StockOpname.status == models_opname.OpnameStatus.POSTED
+        models_opname.StockOpname.status == "Posted"
     )
     total_variance = (await db.execute(variance_query)).scalar() or 0
     

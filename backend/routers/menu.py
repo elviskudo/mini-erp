@@ -20,9 +20,13 @@ router = APIRouter(prefix="/menus", tags=["menus"])
 class MenuChild(BaseModel):
     label: str
     to: Optional[str] = None
+    children: Optional[List["MenuChild"]] = None
     
     class Config:
         from_attributes = True
+
+# Update forward references for recursive type
+MenuChild.model_rebuild()
 
 
 class MenuResponse(BaseModel):
@@ -54,23 +58,24 @@ def get_hardcoded_menus(user_role: str) -> list:
         {"label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "children": [
             {"label": "Work Centers", "to": "/manufacturing/work-centers"},
             {"label": "Products & BOM", "to": "/manufacturing/products"},
-            {"label": "Production Orders", "to": "/manufacturing/production"}
+            {"label": "Routing", "to": "/manufacturing/routing"},
+            {"label": "Production Orders", "to": "/manufacturing/production"},
+            {"label": "Quality Control", "to": "/manufacturing/quality"}
         ]},
         {"label": "Inventory", "icon": "i-heroicons-cube", "children": [
-            {"label": "Stock Status", "to": "/inventory/stock"},
             {"label": "Warehouses", "to": "/inventory/warehouses"},
             {"label": "Storage Zones", "to": "/inventory/storage-zones"},
-            {"label": "Movements", "to": "/inventory/movements"},
+            {"label": "Stock Status", "to": "/inventory/stock"},
             {"label": "Goods Receipt", "to": "/inventory/receiving"},
-            {"label": "Stock Opname", "to": "/inventory/opname"},
-            {"label": "  └ Schedule", "to": "/inventory/opname/schedule"},
-            {"label": "  └ Counting", "to": "/inventory/opname/counting"},
-            {"label": "  └ Matching", "to": "/inventory/opname/matching"},
-            {"label": "  └ Adjustment", "to": "/inventory/opname/adjustment"},
-            {"label": "  └ Reports", "to": "/inventory/opname/reports"},
-            {"label": "Overhead Report", "to": "/inventory/overhead"}
+            {"label": "Movements", "to": "/inventory/movements"},
+            {"label": "Overhead Report", "to": "/inventory/overhead"},
+            {"label": "Stock Opname", "to": "/inventory/opname", "children": [
+                {"label": "Schedule", "to": "/inventory/opname/schedule"},
+                {"label": "Counting", "to": "/inventory/opname/counting"},
+                {"label": "Matching", "to": "/inventory/opname/matching"},
+                {"label": "Adjustment", "to": "/inventory/opname/adjustment"}
+            ]}
         ]},
-        {"label": "Quality Control", "icon": "i-heroicons-beaker", "to": "/qc/inspections"},
         {"label": "Logistics", "icon": "i-heroicons-truck", "to": "/logistics/delivery"},
         {"label": "Finance", "icon": "i-heroicons-banknotes", "children": [
             {"label": "Chart of Accounts", "to": "/finance/coa"},
@@ -148,36 +153,68 @@ async def get_user_menus(
     )
     permissions = result.all()
     
-    # If no permissions exist, this is a new tenant - show only Config menu
+    # If no permissions exist, fallback to hardcoded menus
+    # MANAGER should always see all menus even without DB permissions
     if not permissions:
-        return [{"label": "Config", "icon": "i-heroicons-cog-6-tooth", "to": "/setup"}]
+        return get_hardcoded_menus(user_role)
     
-    # Group menus by parent
-    parent_menus = []
-    child_menus_by_parent = {}
+    # Build a map of all menus by id
+    all_menus_map = {}
+    for perm, menu in permissions:
+        all_menus_map[menu.id] = menu
+    
+    # Group menus by parent - handle 3 levels
+    top_level_menus = []  # parent_id is None
+    level_2_by_parent = {}  # parent is top-level
+    level_3_by_parent = {}  # parent is level-2
     
     for perm, menu in permissions:
         if menu.parent_id is None:
-            parent_menus.append(menu)
-        else:
-            if menu.parent_id not in child_menus_by_parent:
-                child_menus_by_parent[menu.parent_id] = []
-            child_menus_by_parent[menu.parent_id].append(menu)
+            top_level_menus.append(menu)
+        elif menu.parent_id in all_menus_map:
+            parent = all_menus_map[menu.parent_id]
+            if parent.parent_id is None:
+                # This is a level-2 menu (child of top-level)
+                if menu.parent_id not in level_2_by_parent:
+                    level_2_by_parent[menu.parent_id] = []
+                level_2_by_parent[menu.parent_id].append(menu)
+            else:
+                # This is a level-3 menu (grandchild)
+                if menu.parent_id not in level_3_by_parent:
+                    level_3_by_parent[menu.parent_id] = []
+                level_3_by_parent[menu.parent_id].append(menu)
     
-    # Build menu response
+    # Sort by sort_order
+    top_level_menus.sort(key=lambda x: x.sort_order)
+    for key in level_2_by_parent:
+        level_2_by_parent[key].sort(key=lambda x: x.sort_order)
+    for key in level_3_by_parent:
+        level_3_by_parent[key].sort(key=lambda x: x.sort_order)
+    
+    # Build menu response with 3 levels
     menus = []
-    for menu in parent_menus:
+    for menu in top_level_menus:
         menu_item = {
             "label": menu.label,
             "icon": menu.icon,
         }
         
-        children = child_menus_by_parent.get(menu.id, [])
-        if children:
-            menu_item["children"] = [
-                {"label": c.label, "to": c.path}
-                for c in children
-            ]
+        level2_children = level_2_by_parent.get(menu.id, [])
+        if level2_children:
+            children_list = []
+            for child in level2_children:
+                child_item = {"label": child.label, "to": child.path}
+                
+                # Check for level-3 children
+                level3_children = level_3_by_parent.get(child.id, [])
+                if level3_children:
+                    child_item["children"] = [
+                        {"label": gc.label, "to": gc.path}
+                        for gc in level3_children
+                    ]
+                
+                children_list.append(child_item)
+            menu_item["children"] = children_list
         else:
             menu_item["to"] = menu.path
         

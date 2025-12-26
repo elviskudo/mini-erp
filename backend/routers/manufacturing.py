@@ -656,3 +656,289 @@ async def transfer_to_stock(
         "batches_created": batches_created
     }
 
+
+# ============ ROUTING ENDPOINTS ============
+
+@router.get("/routings")
+async def list_routings(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get all routings for the tenant"""
+    from models.models_manufacturing import Routing, RoutingStep
+    
+    query = select(Routing).where(
+        Routing.tenant_id == current_user.tenant_id
+    ).options(
+        selectinload(Routing.product),
+        selectinload(Routing.steps).selectinload(RoutingStep.work_center)
+    )
+    result = await db.execute(query)
+    routings = result.scalars().all()
+    
+    return [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "version": r.version,
+            "is_active": r.is_active,
+            "total_time_hours": r.total_time_hours,
+            "product_id": str(r.product_id),
+            "product_name": r.product.name if r.product else "Unknown",
+            "product_code": r.product.code if r.product else "",
+            "steps": [
+                {
+                    "id": str(s.id),
+                    "sequence": s.sequence,
+                    "operation_name": s.operation_name,
+                    "work_center_id": str(s.work_center_id),
+                    "work_center_name": s.work_center.name if s.work_center else "",
+                    "setup_time_mins": s.setup_time_mins,
+                    "run_time_mins": s.run_time_mins
+                }
+                for s in sorted(r.steps, key=lambda x: x.sequence)
+            ]
+        }
+        for r in routings
+    ]
+
+
+@router.post("/routings")
+async def create_routing(
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a new routing with steps"""
+    from models.models_manufacturing import Routing, RoutingStep
+    import uuid as uuid_lib
+    
+    routing = Routing(
+        id=uuid_lib.uuid4(),
+        tenant_id=current_user.tenant_id,
+        product_id=payload.get("product_id"),
+        name=payload.get("name"),
+        version=payload.get("version", "1.0"),
+        is_active=payload.get("is_active", True)
+    )
+    db.add(routing)
+    await db.flush()
+    
+    # Add steps
+    total_time = 0
+    for step_data in payload.get("steps", []):
+        step = RoutingStep(
+            id=uuid_lib.uuid4(),
+            tenant_id=current_user.tenant_id,
+            routing_id=routing.id,
+            work_center_id=step_data.get("work_center_id"),
+            sequence=step_data.get("sequence", 10),
+            operation_name=step_data.get("operation_name"),
+            setup_time_mins=step_data.get("setup_time_mins", 0),
+            run_time_mins=step_data.get("run_time_mins", 0)
+        )
+        total_time += (step.setup_time_mins + step.run_time_mins) / 60
+        db.add(step)
+    
+    routing.total_time_hours = round(total_time, 2)
+    
+    await db.commit()
+    
+    return {"message": "Routing created", "id": str(routing.id)}
+
+
+@router.put("/routings/{routing_id}")
+async def update_routing(
+    routing_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update an existing routing"""
+    from models.models_manufacturing import Routing, RoutingStep
+    import uuid as uuid_lib
+    
+    result = await db.execute(select(Routing).where(Routing.id == routing_id))
+    routing = result.scalar_one_or_none()
+    
+    if not routing:
+        raise HTTPException(status_code=404, detail="Routing not found")
+    
+    routing.name = payload.get("name", routing.name)
+    routing.version = payload.get("version", routing.version)
+    routing.is_active = payload.get("is_active", routing.is_active)
+    routing.product_id = payload.get("product_id", routing.product_id)
+    
+    # Delete existing steps
+    await db.execute(RoutingStep.__table__.delete().where(RoutingStep.routing_id == routing_id))
+    
+    # Re-add steps
+    total_time = 0
+    for step_data in payload.get("steps", []):
+        step = RoutingStep(
+            id=uuid_lib.uuid4(),
+            tenant_id=current_user.tenant_id,
+            routing_id=routing.id,
+            work_center_id=step_data.get("work_center_id"),
+            sequence=step_data.get("sequence", 10),
+            operation_name=step_data.get("operation_name"),
+            setup_time_mins=step_data.get("setup_time_mins", 0),
+            run_time_mins=step_data.get("run_time_mins", 0)
+        )
+        total_time += (step.setup_time_mins + step.run_time_mins) / 60
+        db.add(step)
+    
+    routing.total_time_hours = round(total_time, 2)
+    
+    await db.commit()
+    
+    return {"message": "Routing updated"}
+
+
+@router.delete("/routings/{routing_id}")
+async def delete_routing(
+    routing_id: str,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete a routing"""
+    from models.models_manufacturing import Routing
+    
+    result = await db.execute(select(Routing).where(Routing.id == routing_id))
+    routing = result.scalar_one_or_none()
+    
+    if not routing:
+        raise HTTPException(status_code=404, detail="Routing not found")
+    
+    await db.delete(routing)
+    await db.commit()
+    
+    return {"message": "Routing deleted"}
+
+
+# ============ QUALITY CHECK ENDPOINTS ============
+
+@router.get("/quality-checks")
+async def list_quality_checks(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get all quality checks"""
+    from models.models_manufacturing import QualityCheck
+    
+    query = select(QualityCheck).where(
+        QualityCheck.tenant_id == current_user.tenant_id
+    ).options(
+        selectinload(QualityCheck.product),
+        selectinload(QualityCheck.inspector)
+    ).order_by(QualityCheck.check_date.desc())
+    
+    result = await db.execute(query)
+    checks = result.scalars().all()
+    
+    return [
+        {
+            "id": str(c.id),
+            "qc_number": c.qc_number,
+            "check_date": c.check_date.isoformat() if c.check_date else None,
+            "status": c.status,
+            "product_id": str(c.product_id),
+            "product_name": c.product.name if c.product else "Unknown",
+            "inspected_qty": c.inspected_qty,
+            "passed_qty": c.passed_qty,
+            "failed_qty": c.failed_qty,
+            "notes": c.notes,
+            "defect_types": c.defect_types,
+            "inspector": c.inspector.username if c.inspector else None
+        }
+        for c in checks
+    ]
+
+
+@router.post("/quality-checks")
+async def create_quality_check(
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a new quality check"""
+    from models.models_manufacturing import QualityCheck
+    from datetime import datetime
+    import uuid as uuid_lib
+    
+    # Generate QC number
+    count_result = await db.execute(
+        select(QualityCheck).where(QualityCheck.tenant_id == current_user.tenant_id)
+    )
+    count = len(count_result.scalars().all())
+    qc_number = f"QC-{datetime.utcnow().strftime('%Y%m%d')}-{str(count + 1).zfill(3)}"
+    
+    qc = QualityCheck(
+        id=uuid_lib.uuid4(),
+        tenant_id=current_user.tenant_id,
+        qc_number=qc_number,
+        check_date=datetime.utcnow(),
+        product_id=payload.get("product_id"),
+        production_order_id=payload.get("production_order_id") or None,
+        inspected_qty=payload.get("inspected_qty", 0),
+        passed_qty=0,
+        failed_qty=0,
+        status="Pending",
+        notes=payload.get("notes"),
+        inspector_id=current_user.id
+    )
+    db.add(qc)
+    await db.commit()
+    
+    return {"message": "QC Check created", "qc_number": qc_number, "id": str(qc.id)}
+
+
+@router.put("/quality-checks/{qc_id}/execute")
+async def execute_quality_check(
+    qc_id: str,
+    payload: dict,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Execute/complete a quality check"""
+    from models.models_manufacturing import QualityCheck
+    
+    result = await db.execute(select(QualityCheck).where(QualityCheck.id == qc_id))
+    qc = result.scalar_one_or_none()
+    
+    if not qc:
+        raise HTTPException(status_code=404, detail="Quality check not found")
+    
+    qc.passed_qty = payload.get("passed_qty", 0)
+    qc.failed_qty = payload.get("failed_qty", 0)
+    qc.status = payload.get("status", "Passed")
+    qc.notes = payload.get("notes", qc.notes)
+    qc.defect_types = payload.get("defect_types")
+    qc.inspector_id = current_user.id
+    
+    await db.commit()
+    
+    return {"message": "QC executed", "status": qc.status}
+
+
+# Alias for production orders list
+@router.get("/orders")
+async def list_orders(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Alias to get production orders for dropdown"""
+    query = select(models.ProductionOrder).where(
+        models.ProductionOrder.tenant_id == current_user.tenant_id
+    )
+    result = await db.execute(query)
+    orders = result.scalars().all()
+    
+    return [
+        {
+            "id": str(o.id),
+            "order_no": o.order_no,
+            "status": o.status.value if hasattr(o.status, 'value') else str(o.status)
+        }
+        for o in orders
+    ]

@@ -251,21 +251,49 @@ const clearNotifications = () => {
 }
 
 onMounted(() => {
-    // Connect to Realtime Server
-    const socket = io("http://localhost:3001");
+    // Connect to Realtime Server with auth info for tenant/user rooms
+    const socket = io("http://localhost:3001", {
+        auth: {
+            tenantId: authStore.user?.tenant_id,
+            userId: authStore.user?.id
+        },
+        query: {
+            tenant_id: authStore.user?.tenant_id,
+            user_id: authStore.user?.id
+        }
+    });
     
     socket.on("connect", () => {
-        console.log("Connected to Realtime Server");
+        console.log("Connected to Realtime Server. Socket ID:", socket.id);
+    });
+    
+    socket.on("connect_error", (error) => {
+        console.warn("Realtime server connection error:", error.message);
     });
     
     socket.on("notification", (payload: any) => {
         console.log("Notification received:", payload);
         notifications.value.unshift(payload);
         
+        // Determine icon based on notification type
+        let icon = 'i-heroicons-bell';
+        let color = 'primary';
+        if (payload.type === 'success') {
+            icon = 'i-heroicons-check-circle';
+            color = 'green';
+        } else if (payload.type === 'error') {
+            icon = 'i-heroicons-x-circle';
+            color = 'red';
+        } else if (payload.type === 'warning') {
+            icon = 'i-heroicons-exclamation-triangle';
+            color = 'yellow';
+        }
+        
         toast.add({
             title: payload.title,
             description: payload.message,
-            icon: 'i-heroicons-bell',
+            icon: icon,
+            color: color,
             timeout: 5000
         });
     });

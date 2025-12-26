@@ -63,8 +63,8 @@
           <div class="flex gap-1">
             <UButton icon="i-heroicons-eye" color="gray" variant="ghost" size="xs" @click="viewOrder(row)" title="View Details" />
             <UButton icon="i-heroicons-document-arrow-down" color="primary" variant="ghost" size="xs" @click="downloadPdf(row)" title="Download PDF" />
-            <UButton v-if="row.status === 'Draft'" icon="i-heroicons-paper-airplane" color="blue" variant="ghost" size="xs" @click="openSendModal(row)" title="Send to Vendor" />
-            <UButton v-if="row.status === 'Open' || row.status === 'Partial Receive'" icon="i-heroicons-inbox-arrow-down" color="green" variant="ghost" size="xs" @click="openReceive(row)" title="Receive Goods" />
+            <UButton v-if="row.status === 'DRAFT'" icon="i-heroicons-paper-airplane" color="blue" variant="ghost" size="xs" @click="openSendModal(row)" title="Send to Vendor" />
+            <UButton v-if="row.status === 'OPEN' || row.status === 'PARTIAL_RECEIVE'" icon="i-heroicons-inbox-arrow-down" color="green" variant="ghost" size="xs" @click="openReceive(row)" title="Receive Goods" />
           </div>
         </template>
       </DataTable>

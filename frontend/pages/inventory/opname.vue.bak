@@ -1,0 +1,426 @@
+<template>
+  <div class="space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-xl font-semibold text-gray-900">Stock Opname (Stock Take)</h2>
+      <UButton icon="i-heroicons-plus" color="primary" @click="openCreateModal">New Opname</UButton>
+    </div>
+
+    <!-- Opname List -->
+    <UCard v-if="!activeOpname">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span>Opname History</span>
+          <div class="flex gap-2">
+            <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-document-arrow-down" @click="exportPdf">PDF</UButton>
+            <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-document-text" @click="exportXls">XLS</UButton>
+            <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-table-cells" @click="exportCsv">CSV</UButton>
+          </div>
+        </div>
+      </template>
+      
+      <DataTable
+        :columns="columns"
+        :rows="opnames"
+        :loading="loading"
+        searchable
+        :search-keys="['warehouse.name', 'notes']"
+        empty-message="No stock opname records found"
+      >
+        <template #date-data="{ row }">
+          {{ formatDate(row.date) }}
+        </template>
+        <template #warehouse-data="{ row }">
+          {{ row.warehouse?.name || 'N/A' }}
+        </template>
+        <template #status-data="{ row }">
+          <UBadge :color="getStatusColor(row.status)" variant="subtle">{{ formatStatus(row.status) }}</UBadge>
+        </template>
+        <template #items-data="{ row }">
+          {{ row.details?.length || 0 }} items
+        </template>
+        <template #actions-data="{ row }">
+          <div class="flex gap-1">
+            <UButton icon="i-heroicons-eye" color="gray" variant="ghost" size="xs" @click="viewOpname(row.id)" title="View Details" />
+            <UButton v-if="row.status === 'DRAFT'" icon="i-heroicons-pencil" color="blue" variant="ghost" size="xs" @click="editOpname(row)" title="Edit Count" />
+            <UButton v-if="row.status === 'DRAFT'" icon="i-heroicons-check-circle" color="green" variant="ghost" size="xs" @click="confirmPost(row)" title="Finalize & Post" />
+          </div>
+        </template>
+      </DataTable>
+    </UCard>
+
+    <!-- Active Opname Detail View -->
+    <div v-else class="space-y-4">
+      <UCard>
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h3 class="text-lg font-bold">Stock Opname Details</h3>
+            <p class="text-sm text-gray-500">Warehouse: {{ activeOpname.warehouse?.name }}</p>
+            <p class="text-xs text-gray-400">{{ formatDate(activeOpname.date) }}</p>
+          </div>
+          <div class="flex gap-2">
+            <UBadge :color="getStatusColor(activeOpname.status)" variant="subtle" size="lg">{{ formatStatus(activeOpname.status) }}</UBadge>
+            <UButton color="gray" variant="ghost" @click="closeDetail">Back to List</UButton>
+            <UButton v-if="activeOpname.status === 'DRAFT'" color="green" :loading="posting" @click="postOpname">Finalize & Post</UButton>
+          </div>
+        </div>
+
+        <!-- Detail Items -->
+        <UTable :columns="detailColumns" :rows="activeOpname.details || []">
+          <template #product-data="{ row }">
+            <div>
+              <p class="font-medium">{{ row.product?.name || 'Unknown Product' }}</p>
+              <p class="text-xs text-gray-400">Batch: {{ row.batch_id?.substring(0, 8) || 'N/A' }}</p>
+            </div>
+          </template>
+          <template #system_qty-data="{ row }">
+            <span class="font-mono">{{ row.system_qty }}</span>
+          </template>
+          <template #counted_qty-data="{ row }">
+            <div v-if="activeOpname.status === 'DRAFT' && isEditing" class="flex items-center gap-2">
+              <UInput v-model.number="row.counted_qty" type="number" size="xs" class="w-24" />
+              <UButton size="xs" color="gray" variant="ghost" icon="i-heroicons-check" @click="saveCount(row)" :loading="savingMatches[row.id]" />
+            </div>
+            <span v-else class="font-mono">{{ row.counted_qty ?? '-' }}</span>
+          </template>
+          <template #difference-data="{ row }">
+            <span v-if="row.counted_qty != null" :class="getDiffClass(row.counted_qty - row.system_qty)">
+              {{ (row.counted_qty - row.system_qty) > 0 ? '+' : '' }}{{ row.counted_qty - row.system_qty }}
+            </span>
+            <span v-else class="text-gray-400">-</span>
+          </template>
+        </UTable>
+
+        <!-- Edit Button -->
+        <div v-if="activeOpname.status === 'DRAFT' && !isEditing" class="mt-4">
+          <UButton color="blue" variant="soft" icon="i-heroicons-pencil" @click="isEditing = true">Edit Counted Quantities</UButton>
+        </div>
+        <div v-if="isEditing" class="mt-4 flex gap-2">
+          <UButton color="primary" @click="saveAllCounts" :loading="submitting">Save All Changes</UButton>
+          <UButton color="gray" variant="ghost" @click="isEditing = false">Cancel</UButton>
+        </div>
+      </UCard>
+    </div>
+
+    <!-- Create Modal -->
+    <UModal v-model="isOpen">
+      <UCard>
+        <template #header>
+          <div class="flex items-center gap-2">
+            <UIcon name="i-heroicons-clipboard-document-list" class="text-primary-500" />
+            <h3 class="text-base font-semibold">Start Stock Take</h3>
+          </div>
+        </template>
+
+        <form @submit.prevent="createOpname" class="space-y-4">
+          <UFormGroup label="Warehouse" required hint="Select warehouse to take stock snapshot">
+            <USelect v-model="form.warehouse_id" :options="warehouses" option-attribute="name" value-attribute="id" placeholder="Select warehouse..." />
+          </UFormGroup>
+          
+          <UFormGroup label="Notes" hint="Optional notes for this opname">
+            <UTextarea v-model="form.notes" rows="2" placeholder="Any notes..." />
+          </UFormGroup>
+          
+          <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <p class="text-sm text-yellow-700">
+              <UIcon name="i-heroicons-exclamation-triangle" class="inline mr-1" />
+              This will take a snapshot of current stock levels in the selected warehouse.
+            </p>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-4">
+            <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
+            <UButton type="submit" :loading="submitting" :disabled="!form.warehouse_id">Start Opname</UButton>
+          </div>
+        </form>
+      </UCard>
+    </UModal>
+
+    <!-- View Modal -->
+    <UModal v-model="showViewModal" :ui="{ width: 'w-full sm:max-w-4xl' }">
+      <UCard v-if="viewOpnameData">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-semibold">Opname Details</h3>
+            <UBadge :color="getStatusColor(viewOpnameData.status)" variant="subtle">{{ formatStatus(viewOpnameData.status) }}</UBadge>
+          </div>
+        </template>
+        
+        <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+          <div><span class="text-gray-500">Warehouse:</span> {{ viewOpnameData.warehouse?.name }}</div>
+          <div><span class="text-gray-500">Date:</span> {{ formatDate(viewOpnameData.date) }}</div>
+          <div><span class="text-gray-500">Status:</span> {{ formatStatus(viewOpnameData.status) }}</div>
+          <div><span class="text-gray-500">Items:</span> {{ viewOpnameData.details?.length || 0 }}</div>
+        </div>
+        
+        <UTable :columns="viewDetailColumns" :rows="viewOpnameData.details || []" class="text-sm">
+          <template #product-data="{ row }">
+            {{ row.product?.name || 'Unknown' }}
+          </template>
+          <template #difference-data="{ row }">
+            <span v-if="row.counted_qty != null" :class="getDiffClass(row.counted_qty - row.system_qty)">
+              {{ (row.counted_qty - row.system_qty) > 0 ? '+' : '' }}{{ row.counted_qty - row.system_qty }}
+            </span>
+            <span v-else>-</span>
+          </template>
+        </UTable>
+        
+        <template #footer>
+          <div class="flex justify-end">
+            <UButton color="gray" @click="showViewModal = false">Close</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+  </div>
+</template>
+
+<script setup lang="ts">
+const { $api } = useNuxtApp()
+const toast = useToast()
+
+const isOpen = ref(false)
+const loading = ref(false)
+const submitting = ref(false)
+const posting = ref(false)
+const isEditing = ref(false)
+const showViewModal = ref(false)
+
+const opnames = ref<any[]>([])
+const warehouses = ref<any[]>([])
+const activeOpname = ref<any>(null)
+const viewOpnameData = ref<any>(null)
+const savingMatches = reactive<Record<string, boolean>>({})
+
+const columns = [
+  { key: 'date', label: 'Date', sortable: true },
+  { key: 'warehouse', label: 'Warehouse', sortable: true },
+  { key: 'status', label: 'Status' },
+  { key: 'items', label: 'Items' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'actions', label: 'Actions' }
+]
+
+const detailColumns = [
+  { key: 'product', label: 'Product' },
+  { key: 'system_qty', label: 'System Qty' },
+  { key: 'counted_qty', label: 'Counted Qty' },
+  { key: 'difference', label: 'Difference' }
+]
+
+const viewDetailColumns = [
+  { key: 'product', label: 'Product' },
+  { key: 'system_qty', label: 'System' },
+  { key: 'counted_qty', label: 'Counted' },
+  { key: 'difference', label: 'Diff' }
+]
+
+const form = reactive({ warehouse_id: '', notes: '' })
+
+const formatDate = (date: string) => {
+  if (!date) return '-'
+  return new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+const formatStatus = (status: string) => {
+  if (!status) return 'Unknown'
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
+}
+
+const getStatusColor = (status: string) => {
+  switch (status?.toUpperCase()) {
+    case 'DRAFT': return 'orange'
+    case 'POSTED': return 'green'
+    case 'CANCELLED': return 'red'
+    default: return 'gray'
+  }
+}
+
+const getDiffClass = (diff: number) => {
+  if (diff > 0) return 'text-green-600 font-bold'
+  if (diff < 0) return 'text-red-600 font-bold'
+  return 'text-gray-500'
+}
+
+const fetchOpnames = async () => {
+  loading.value = true
+  try {
+    const res = await $api.get('/opname/list')
+    opnames.value = res.data
+    
+    const wRes = await $api.get('/inventory/warehouses')
+    warehouses.value = wRes.data
+  } catch (e) { 
+    console.error(e)
+    toast.add({ title: 'Error', description: 'Failed to load opname list', color: 'red' })
+  } finally { 
+    loading.value = false 
+  }
+}
+
+const openCreateModal = () => {
+  form.warehouse_id = ''
+  form.notes = ''
+  isOpen.value = true
+}
+
+const createOpname = async () => {
+  if (!form.warehouse_id) {
+    toast.add({ title: 'Error', description: 'Please select a warehouse', color: 'red' })
+    return
+  }
+  
+  submitting.value = true
+  try {
+    const res = await $api.post('/opname/create', { 
+      warehouse_id: form.warehouse_id,
+      notes: form.notes || null
+    })
+    isOpen.value = false
+    toast.add({ title: 'Success', description: 'Stock opname created', color: 'green' })
+    
+    // Refresh list and open the new opname
+    await fetchOpnames()
+    await editOpname(res.data)
+  } catch (e: any) { 
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to create', color: 'red' })
+  } finally { 
+    submitting.value = false 
+  }
+}
+
+const viewOpname = async (id: string) => {
+  loading.value = true
+  try {
+    const res = await $api.get(`/opname/${id}`)
+    viewOpnameData.value = res.data
+    showViewModal.value = true
+  } catch (e) { 
+    toast.add({ title: 'Error', description: 'Failed to load opname', color: 'red' })
+  } finally { 
+    loading.value = false 
+  }
+}
+
+const editOpname = async (row: any) => {
+  loading.value = true
+  try {
+    const res = await $api.get(`/opname/${row.id}`)
+    activeOpname.value = res.data
+    isEditing.value = true
+  } catch (e) { 
+    toast.add({ title: 'Error', description: 'Failed to load opname', color: 'red' })
+  } finally { 
+    loading.value = false 
+  }
+}
+
+const closeDetail = () => {
+  activeOpname.value = null
+  isEditing.value = false
+  fetchOpnames()
+}
+
+const saveCount = async (row: any) => {
+  savingMatches[row.id] = true
+  try {
+    await $api.post('/opname/update_count', [{
+      detail_id: row.id,
+      counted_qty: Number(row.counted_qty)
+    }])
+    toast.add({ title: 'Saved', description: 'Count updated', color: 'green', timeout: 2000 })
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to save', color: 'red' })
+  } finally {
+    savingMatches[row.id] = false
+  }
+}
+
+const saveAllCounts = async () => {
+  submitting.value = true
+  try {
+    const updates = activeOpname.value.details
+      .filter((d: any) => d.counted_qty != null)
+      .map((d: any) => ({
+        detail_id: d.id,
+        counted_qty: Number(d.counted_qty)
+      }))
+    
+    if (updates.length > 0) {
+      await $api.post('/opname/update_count', updates)
+    }
+    
+    toast.add({ title: 'Success', description: 'All counts saved', color: 'green' })
+    isEditing.value = false
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to save', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+const confirmPost = async (row: any) => {
+  if (!confirm('Finalize stock adjustments? This will update actual stock levels and cannot be undone.')) return
+  
+  posting.value = true
+  try {
+    await $api.post('/opname/post', { opname_id: row.id })
+    toast.add({ title: 'Success', description: 'Stock opname posted and adjustments applied', color: 'green' })
+    await fetchOpnames()
+  } catch (e: any) { 
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to post', color: 'red' })
+  } finally { 
+    posting.value = false 
+  }
+}
+
+const postOpname = async () => {
+  if (!confirm('Finalize stock adjustments? This will update actual stock levels and cannot be undone.')) return
+  
+  posting.value = true
+  try {
+    await $api.post('/opname/post', { opname_id: activeOpname.value.id })
+    toast.add({ title: 'Success', description: 'Stock opname posted!', color: 'green' })
+    activeOpname.value = null
+    isEditing.value = false
+    await fetchOpnames()
+  } catch (e: any) { 
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to post', color: 'red' })
+  } finally { 
+    posting.value = false 
+  }
+}
+
+// Export Functions - use backend API
+import { useAuthStore } from '~/stores/auth'
+const authStore = useAuthStore()
+
+const exportData = async (format: string) => {
+  try {
+    const headers = { Authorization: `Bearer ${authStore.token}` }
+    const res = await $fetch(`/api/export/opnames?format=${format}`, { 
+      headers,
+      responseType: 'blob'
+    })
+    
+    const blob = res as Blob
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stock_opname_${new Date().toISOString().split('T')[0]}.${format}`
+    a.click()
+    window.URL.revokeObjectURL(url)
+    toast.add({ title: 'Exported', description: `Data exported to ${format.toUpperCase()}`, color: 'green' })
+  } catch (e) {
+    toast.add({ title: 'Error', description: 'Failed to export data', color: 'red' })
+  }
+}
+
+// Legacy function names for template compatibility
+const exportPdf = () => exportData('pdf')
+const exportXls = () => exportData('xlsx')
+const exportCsv = () => exportData('csv')
+
+onMounted(() => {
+  fetchOpnames()
+})
+</script>

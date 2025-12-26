@@ -19,7 +19,7 @@ router = APIRouter(prefix="/menus", tags=["menus"])
 
 class MenuChild(BaseModel):
     label: str
-    to: str
+    to: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -62,7 +62,12 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Storage Zones", "to": "/inventory/storage-zones"},
             {"label": "Movements", "to": "/inventory/movements"},
             {"label": "Goods Receipt", "to": "/inventory/receiving"},
-            {"label": "Opname", "to": "/inventory/opname"},
+            {"label": "Stock Opname", "to": "/inventory/opname"},
+            {"label": "  └ Schedule", "to": "/inventory/opname/schedule"},
+            {"label": "  └ Counting", "to": "/inventory/opname/counting"},
+            {"label": "  └ Matching", "to": "/inventory/opname/matching"},
+            {"label": "  └ Adjustment", "to": "/inventory/opname/adjustment"},
+            {"label": "  └ Reports", "to": "/inventory/opname/reports"},
             {"label": "Overhead Report", "to": "/inventory/overhead"}
         ]},
         {"label": "Quality Control", "icon": "i-heroicons-beaker", "to": "/qc/inspections"},

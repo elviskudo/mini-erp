@@ -15,7 +15,8 @@ async def record_movement(
     batch_id: uuid.UUID = None,
     reference_id: str = None,
     project_id: str = None,
-    notes: str = None
+    notes: str = None,
+    tenant_id: uuid.UUID = None
 ):
     movement = models.StockMovement(
         product_id=product_id,
@@ -25,7 +26,8 @@ async def record_movement(
         movement_type=movement_type,
         reference_id=reference_id,
         project_id=project_id,
-        notes=notes
+        notes=notes,
+        tenant_id=tenant_id
     )
     db.add(movement)
     await db.commit()

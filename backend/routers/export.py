@@ -904,3 +904,80 @@ async def export_purchase_orders(
         return create_pdf_response(data, columns, title, filename, footer_data)
     else:
         return create_csv_response(data, columns, filename, title, footer_data)
+
+
+# ============ Stock Opname Exports ============
+
+@router.get("/opnames")
+async def export_opnames(
+    format: str = Query("csv", pattern="^(xlsx|pdf|csv)$"),
+    status: str = None,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Export stock opnames to XLS, PDF or CSV"""
+    from sqlalchemy.orm import selectinload
+    
+    query = select(models.StockOpname).where(
+        models.StockOpname.tenant_id == current_user.tenant_id
+    ).options(
+        selectinload(models.StockOpname.warehouse),
+        selectinload(models.StockOpname.details)
+    ).order_by(models.StockOpname.date.desc())
+    
+    if status:
+        query = query.where(models.StockOpname.status == status.upper())
+    
+    result = await db.execute(query)
+    opnames = result.scalars().all()
+    
+    # Format data
+    data = []
+    for opname in opnames:
+        # Count differences
+        total_items = len(opname.details) if opname.details else 0
+        items_with_diff = 0
+        total_diff = 0
+        if opname.details:
+            for d in opname.details:
+                if d.counted_qty is not None:
+                    diff = d.counted_qty - d.system_qty
+                    total_diff += diff
+                    if diff != 0:
+                        items_with_diff += 1
+        
+        data.append({
+            'date': opname.date.strftime("%Y-%m-%d") if opname.date else "",
+            'warehouse': opname.warehouse.name if opname.warehouse else "-",
+            'status': opname.status.value if hasattr(opname.status, 'value') else str(opname.status),
+            'total_items': total_items,
+            'items_with_diff': items_with_diff,
+            'net_adjustment': total_diff,
+            'notes': opname.notes or ""
+        })
+    
+    columns = [
+        {'key': 'date', 'label': 'Date'},
+        {'key': 'warehouse', 'label': 'Warehouse'},
+        {'key': 'status', 'label': 'Status'},
+        {'key': 'total_items', 'label': 'Total Items'},
+        {'key': 'items_with_diff', 'label': 'Items w/ Diff'},
+        {'key': 'net_adjustment', 'label': 'Net Adjustment'},
+        {'key': 'notes', 'label': 'Notes'}
+    ]
+    
+    title = "Stock Opname Report"
+    filename = f"stock_opname_{datetime.now().strftime('%Y%m%d')}"
+    
+    # Footer data
+    footer_data = {
+        'Total Records': len(data),
+        'Total Adjustments': sum(d.get('net_adjustment', 0) for d in data)
+    }
+    
+    if format == "xlsx":
+        return create_xlsx_response(data, columns, filename, title, footer_data)
+    elif format == "pdf":
+        return create_pdf_response(data, columns, title, filename, footer_data)
+    else:
+        return create_csv_response(data, columns, filename, title, footer_data)

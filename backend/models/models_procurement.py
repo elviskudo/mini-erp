@@ -28,12 +28,12 @@ class PRStatus(str, enum.Enum):
 
 
 class POStatus(str, enum.Enum):
-    DRAFT = "Draft"
-    PENDING_APPROVAL = "Pending Approval"
-    OPEN = "Open"  # Sent to Vendor
-    PARTIAL_RECEIVE = "Partial Receive"
-    CLOSED = "Closed"  # Fully received
-    CANCELLED = "Cancelled"
+    DRAFT = "DRAFT"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    OPEN = "OPEN"  # Sent to Vendor
+    PARTIAL_RECEIVE = "PARTIAL_RECEIVE"
+    CLOSED = "CLOSED"  # Fully received
+    CANCELLED = "CANCELLED"
 
 
 class PaymentTerm(str, enum.Enum):

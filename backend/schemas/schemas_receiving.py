@@ -14,10 +14,13 @@ class ReceivePORequest(BaseModel):
     po_id: uuid.UUID
     warehouse_id: uuid.UUID
     items: List[ReceiveItem]
+    notes: Optional[str] = None
 
 class GRResponse(BaseModel):
     id: uuid.UUID
     po_id: uuid.UUID
     batches_created: int
+    progress: Optional[float] = None
+    status: Optional[str] = None
     class Config:
         from_attributes = True

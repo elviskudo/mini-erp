@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 import schemas
 import models
 import database
+from auth import get_current_user
 from services.gl_engine import post_journal_entry
 from schemas.schemas_finance import JournalEntryCreate, JournalDetailCreate
 from consumers.finance_consumer import get_account_id_by_code, ACCOUNT_MAP
@@ -14,16 +15,27 @@ router = APIRouter(
 )
 
 @router.post("/customers", response_model=schemas.CustomerResponse)
-async def create_customer(payload: schemas.CustomerCreate, db: AsyncSession = Depends(database.get_db)):
-    new_cust = models.Customer(**payload.dict())
+async def create_customer(
+    payload: schemas.CustomerCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    new_cust = models.Customer(**payload.dict(), tenant_id=current_user.tenant_id)
     db.add(new_cust)
     await db.commit()
     await db.refresh(new_cust)
     return new_cust
 
 @router.get("/customers", response_model=list[schemas.CustomerResponse])
-async def list_customers(db: AsyncSession = Depends(database.get_db)):
-    result = await db.execute(select(models.Customer))
+async def list_customers(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(models.Customer)
+        .where(models.Customer.tenant_id == current_user.tenant_id)
+        .order_by(models.Customer.name)
+    )
     return result.scalars().all()
 
 @router.post("/invoices", response_model=schemas.SalesInvoiceResponse)

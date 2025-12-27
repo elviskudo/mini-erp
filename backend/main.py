@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from database import engine, Base
 from routers import (
     auth, manufacturing, iot, mrp, qc, inventory, 
-    procurement, receiving, issuance, opname, delivery,
+    procurement, receiving, issuance, opname, delivery, logistics,
     finance, hr, crm, projects, maintenance, ecommerce, compliance,
     ap, ar, subscription, upload, tenants, saas, menu, users, dashboard, export, settings
 )
@@ -47,17 +47,18 @@ app.include_router(receiving.router)
 app.include_router(issuance.router)
 app.include_router(opname.router)
 app.include_router(delivery.router)
+app.include_router(logistics.router)
 app.include_router(finance.router)
 app.include_router(ap.router)
 app.include_router(ar.router)
-app.include_router(hr.router, prefix="/api/v1")
-app.include_router(crm.router, prefix="/api/v1")
-app.include_router(projects.router, prefix="/api/v1")
-app.include_router(maintenance.router, prefix="/api/v1")
-app.include_router(ecommerce.router, prefix="/api/v1")
-app.include_router(compliance.router, prefix="/api/v1")
-app.include_router(subscription.router, prefix="/api/v1")
-app.include_router(upload.router, prefix="/api/v1")
+app.include_router(hr.router)
+app.include_router(crm.router)
+app.include_router(projects.router)
+app.include_router(maintenance.router)
+app.include_router(ecommerce.router)
+app.include_router(compliance.router)
+app.include_router(subscription.router)
+app.include_router(upload.router)
 app.include_router(tenants.router)
 app.include_router(saas.router)
 app.include_router(menu.router)

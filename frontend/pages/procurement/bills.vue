@@ -3,10 +3,12 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h2 class="text-xl font-bold">Vendor Bills</h2>
-        <p class="text-gray-500">Manage invoices from vendors</p>
+        <p class="text-gray-500">Manage invoices received from vendors and track payment status</p>
       </div>
       <div class="flex gap-2">
-        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData('csv')">CSV</UButton>
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm">Export</UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchData">Refresh</UButton>
         <UButton icon="i-heroicons-plus" @click="openCreate">New Bill</UButton>
       </div>
@@ -28,7 +30,7 @@
       </UCard>
       <UCard :ui="{ body: { padding: 'p-4' } }">
         <div class="text-center">
-          <p class="text-2xl font-bold text-orange-600">Rp {{ formatNumber(totalDue) }}</p>
+          <p class="text-2xl font-bold text-orange-600">Rp {{ formatCompact(totalDue) }}</p>
           <p class="text-sm text-gray-500">Balance Due</p>
         </div>
       </UCard>
@@ -67,6 +69,7 @@
         <template #due_date-data="{ row }">
           <span :class="isOverdue(row.due_date, row.status) ? 'text-red-600 font-medium' : ''">
             {{ formatDate(row.due_date) }}
+            <span v-if="isOverdue(row.due_date, row.status)" class="text-xs"> (Overdue)</span>
           </span>
         </template>
         <template #status-data="{ row }">
@@ -93,51 +96,73 @@
     <!-- Create Bill Modal -->
     <FormSlideover 
       v-model="isOpen" 
-      title="New Vendor Bill"
+      title="Create Vendor Bill"
       :loading="submitting"
       @submit="save"
     >
       <div class="space-y-4">
-        <UFormGroup label="Vendor" required>
+        <p class="text-sm text-gray-500 pb-2 border-b">Record an invoice received from a vendor. Link it to a PO for easier tracking.</p>
+        
+        <UFormGroup label="Vendor" required hint="The supplier who issued this invoice" :ui="{ hint: 'text-xs text-gray-400' }">
           <USelect v-model="form.vendor_id" :options="vendorOptions" placeholder="Select vendor..." />
         </UFormGroup>
+        
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Vendor Invoice #">
-            <UInput v-model="form.vendor_invoice" placeholder="INV-001" />
+          <UFormGroup label="Vendor Invoice Number" hint="Invoice number from the vendor's document" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.vendor_invoice" placeholder="e.g., INV-2024-001" />
           </UFormGroup>
-          <UFormGroup label="Bill Date">
+          <UFormGroup label="Bill Date" required hint="Date the invoice was issued" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.bill_date" type="date" />
           </UFormGroup>
         </div>
+        
         <div class="grid grid-cols-2 gap-4">
-          <UFormGroup label="Due Date">
+          <UFormGroup label="Due Date" required hint="Payment deadline for this bill" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model="form.due_date" type="date" />
           </UFormGroup>
-          <UFormGroup label="PO Reference">
-            <USelect v-model="form.po_id" :options="poOptions" placeholder="Link to PO (optional)" />
+          <UFormGroup label="Purchase Order Reference" hint="Link to the original PO (optional)" :ui="{ hint: 'text-xs text-gray-400' }">
+            <USelect v-model="form.po_id" :options="poOptions" placeholder="Link to PO..." />
           </UFormGroup>
         </div>
         
         <!-- Line Items -->
         <div class="border-t pt-4">
           <div class="flex justify-between items-center mb-3">
-            <h4 class="font-medium">Line Items</h4>
+            <div>
+              <h4 class="font-medium">Invoice Line Items</h4>
+              <p class="text-xs text-gray-400">Add items from the vendor's invoice</p>
+            </div>
             <UButton size="xs" icon="i-heroicons-plus" @click="addLine">Add Line</UButton>
           </div>
-          <div v-for="(line, idx) in form.items" :key="idx" class="flex gap-2 mb-2">
-            <UInput v-model="line.description" placeholder="Description" class="flex-1" size="sm" />
+          <div v-if="form.items.length === 0" class="text-center py-4 text-gray-400 text-sm border rounded-lg">
+            No line items added yet. Click "Add Line" to add items.
+          </div>
+          <div v-for="(line, idx) in form.items" :key="idx" class="flex gap-2 mb-2 items-center">
+            <UInput v-model="line.description" placeholder="Item description" class="flex-1" size="sm" />
             <UInput v-model.number="line.quantity" type="number" placeholder="Qty" class="w-16" size="sm" />
-            <UInput v-model.number="line.unit_price" type="number" placeholder="Price" class="w-24" size="sm" />
-            <span class="text-sm text-gray-600 w-24 text-right">{{ formatNumber(line.quantity * line.unit_price) }}</span>
+            <UInput v-model.number="line.unit_price" type="number" placeholder="Unit Price" class="w-28" size="sm" />
+            <span class="text-sm text-gray-600 w-28 text-right font-medium">Rp {{ formatNumber(line.quantity * line.unit_price) }}</span>
             <UButton icon="i-heroicons-trash" size="xs" color="red" variant="ghost" @click="form.items.splice(idx, 1)" />
           </div>
-          <div class="flex justify-end pt-2 border-t mt-2">
-            <span class="font-medium">Total: Rp {{ formatNumber(formTotal) }}</span>
+          <div class="flex justify-between pt-3 border-t mt-3">
+            <span class="text-gray-500">Subtotal:</span>
+            <span class="font-bold text-lg">Rp {{ formatNumber(formTotal) }}</span>
           </div>
         </div>
         
-        <UFormGroup label="Notes">
-          <UTextarea v-model="form.notes" rows="2" />
+        <UFormGroup label="Tax Amount (Rp)" hint="VAT or other applicable taxes" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UInput v-model.number="form.tax_amount" type="number" placeholder="0" />
+        </UFormGroup>
+        
+        <div class="p-3 bg-blue-50 rounded-lg">
+          <div class="flex justify-between">
+            <span class="font-medium text-blue-700">Total Amount:</span>
+            <span class="font-bold text-xl text-blue-700">Rp {{ formatNumber(formTotal + (form.tax_amount || 0)) }}</span>
+          </div>
+        </div>
+        
+        <UFormGroup label="Notes" hint="Additional notes or payment instructions" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UTextarea v-model="form.notes" rows="2" placeholder="e.g., Payment via bank transfer to account..." />
         </UFormGroup>
       </div>
     </FormSlideover>
@@ -159,24 +184,30 @@
         
         <div class="space-y-4">
           <div class="p-3 bg-orange-50 rounded-lg">
-            <p class="text-sm text-orange-700">Balance Due: <strong>Rp {{ formatNumber(selectedBill.balance_due) }}</strong></p>
+            <p class="text-sm text-orange-700">Outstanding Balance: <strong>Rp {{ formatNumber(selectedBill.balance_due) }}</strong></p>
           </div>
           
-          <UFormGroup label="Payment Amount" required>
+          <UFormGroup label="Payment Amount" required hint="Amount being paid for this bill" :ui="{ hint: 'text-xs text-gray-400' }">
             <UInput v-model.number="paymentForm.amount" type="number" placeholder="0" />
           </UFormGroup>
-          <UFormGroup label="Payment Method">
-            <USelect v-model="paymentForm.payment_method" :options="['Bank Transfer', 'Cash', 'Check', 'Credit Card']" />
+          
+          <UFormGroup label="Payment Method" hint="How the payment was made" :ui="{ hint: 'text-xs text-gray-400' }">
+            <USelect v-model="paymentForm.payment_method" :options="paymentMethods" />
           </UFormGroup>
-          <UFormGroup label="Reference / Notes">
-            <UInput v-model="paymentForm.reference" placeholder="Bank ref, check no, etc." />
+          
+          <UFormGroup label="Reference Number" hint="Bank transfer ref, check number, or receipt ID" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="paymentForm.reference" placeholder="e.g., TRF-20241227-001" />
+          </UFormGroup>
+          
+          <UFormGroup label="Payment Notes" hint="Additional payment details or remarks" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UTextarea v-model="paymentForm.notes" rows="2" placeholder="e.g., Paid via company bank account..." />
           </UFormGroup>
         </div>
         
         <template #footer>
           <div class="flex justify-end gap-2">
             <UButton variant="ghost" @click="showPaymentModal = false">Cancel</UButton>
-            <UButton @click="recordPayment" :loading="submitting" color="green">Record Payment</UButton>
+            <UButton @click="recordPayment" :loading="submitting" color="green">Confirm Payment</UButton>
           </div>
         </template>
       </UCard>
@@ -210,6 +241,20 @@ const columns = [
   { key: 'actions', label: '' }
 ]
 
+const paymentMethods = [
+  { label: 'Bank Transfer', value: 'Bank Transfer' },
+  { label: 'Cash', value: 'Cash' },
+  { label: 'Check', value: 'Check' },
+  { label: 'Credit Card', value: 'Credit Card' },
+  { label: 'E-Wallet', value: 'E-Wallet' }
+]
+
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
+
 const form = reactive({
   vendor_id: '',
   vendor_invoice: '',
@@ -217,13 +262,15 @@ const form = reactive({
   due_date: '',
   po_id: '',
   items: [] as any[],
+  tax_amount: 0,
   notes: ''
 })
 
 const paymentForm = reactive({
   amount: 0,
   payment_method: 'Bank Transfer',
-  reference: ''
+  reference: '',
+  notes: ''
 })
 
 const pendingCount = computed(() => bills.value.filter(b => b.status === 'Pending').length)
@@ -231,11 +278,17 @@ const paidCount = computed(() => bills.value.filter(b => b.status === 'Paid').le
 const overdueCount = computed(() => bills.value.filter(b => isOverdue(b.due_date, b.status)).length)
 const totalDue = computed(() => bills.value.reduce((sum, b) => sum + (b.balance_due || 0), 0))
 const vendorOptions = computed(() => vendors.value.map(v => ({ label: v.name, value: v.id })))
-const poOptions = computed(() => [{ label: 'None', value: '' }, ...purchaseOrders.value.map(p => ({ label: p.po_number, value: p.id }))])
+const poOptions = computed(() => [{ label: '-- No PO Link --', value: '' }, ...purchaseOrders.value.map(p => ({ label: p.po_number, value: p.id }))])
 const formTotal = computed(() => form.items.reduce((sum, l) => sum + (l.quantity * l.unit_price), 0))
 
 const formatNumber = (num: number) => new Intl.NumberFormat('id-ID').format(num)
-const formatDate = (date: string) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+const formatCompact = (num: number) => {
+  if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B'
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+  if (num >= 1000) return (num / 1000).toFixed(0) + 'K'
+  return formatNumber(num)
+}
+const formatDate = (date: string) => date ? new Date(date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
 const isOverdue = (date: string, status: string) => status !== 'Paid' && date && new Date(date) < new Date()
 
 const getStatusColor = (status: string) => {
@@ -266,7 +319,7 @@ const fetchData = async () => {
 }
 
 const openCreate = () => {
-  Object.assign(form, { vendor_id: '', vendor_invoice: '', bill_date: new Date().toISOString().split('T')[0], due_date: '', po_id: '', items: [], notes: '' })
+  Object.assign(form, { vendor_id: '', vendor_invoice: '', bill_date: new Date().toISOString().split('T')[0], due_date: '', po_id: '', items: [], tax_amount: 0, notes: '' })
   isOpen.value = true
 }
 
@@ -276,14 +329,19 @@ const viewDetails = (row: any) => {
 
 const openPayment = (row: any) => {
   selectedBill.value = row
-  Object.assign(paymentForm, { amount: row.balance_due, payment_method: 'Bank Transfer', reference: '' })
+  Object.assign(paymentForm, { amount: row.balance_due, payment_method: 'Bank Transfer', reference: '', notes: '' })
   showPaymentModal.value = true
 }
 
 const save = async () => {
+  if (!form.vendor_id) {
+    toast.add({ title: 'Validation Error', description: 'Please select a vendor', color: 'red' })
+    return
+  }
   submitting.value = true
   try {
-    await $api.post('/procurement/bills', { ...form, total_amount: formTotal.value, balance_due: formTotal.value })
+    const totalAmount = formTotal.value + (form.tax_amount || 0)
+    await $api.post('/procurement/bills', { ...form, total_amount: totalAmount, balance_due: totalAmount })
     toast.add({ title: 'Created', description: 'Bill created successfully', color: 'green' })
     isOpen.value = false
     fetchData()
@@ -297,7 +355,7 @@ const save = async () => {
 const approveBill = async (row: any) => {
   try {
     await $api.put(`/procurement/bills/${row.id}/approve`)
-    toast.add({ title: 'Approved', color: 'green' })
+    toast.add({ title: 'Approved', description: 'Bill has been approved', color: 'green' })
     fetchData()
   } catch (e: any) {
     toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed', color: 'red' })
@@ -306,10 +364,14 @@ const approveBill = async (row: any) => {
 
 const recordPayment = async () => {
   if (!selectedBill.value) return
+  if (paymentForm.amount <= 0) {
+    toast.add({ title: 'Validation Error', description: 'Payment amount must be greater than 0', color: 'red' })
+    return
+  }
   submitting.value = true
   try {
     await $api.post(`/procurement/bills/${selectedBill.value.id}/payments`, paymentForm)
-    toast.add({ title: 'Payment Recorded', color: 'green' })
+    toast.add({ title: 'Payment Recorded', description: 'Payment has been recorded successfully', color: 'green' })
     showPaymentModal.value = false
     fetchData()
   } catch (e: any) {
@@ -321,14 +383,41 @@ const recordPayment = async () => {
 
 const exportData = (format: string) => {
   const data = bills.value.map(b => ({
-    'Bill #': b.bill_number, 'Vendor': b.vendor_name, 'Due Date': formatDate(b.due_date),
-    'Status': b.status, 'Total': b.total_amount, 'Balance': b.balance_due
+    'Bill #': b.bill_number,
+    'Vendor Invoice': b.vendor_invoice || '',
+    'Vendor': b.vendor_name,
+    'Bill Date': formatDate(b.bill_date),
+    'Due Date': formatDate(b.due_date),
+    'Status': b.status,
+    'Total Amount': b.total_amount,
+    'Amount Paid': b.amount_paid,
+    'Balance Due': b.balance_due
   }))
-  if (format === 'csv') {
+  
+  if (format === 'csv' || format === 'xls') {
     const headers = Object.keys(data[0] || {})
-    const csv = [headers.join(','), ...data.map(row => headers.map(h => `"${row[h] || ''}"`).join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'vendor_bills.csv'; a.click()
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map(row => headers.map(h => `"${row[h as keyof typeof row] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `vendor_bills.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `Vendor bills exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Vendor Bills</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Vendor Bills Report</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <p>Total Outstanding: Rp ${formatNumber(totalDue.value)}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map(row => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
   }
 }
 

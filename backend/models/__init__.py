@@ -10,6 +10,7 @@ from .models_receiving import *
 from .models_ledger import *
 from .models_opname import *
 from .models_delivery import *
+from .models_logistics import *
 from .models_finance import *
 from .models_ap import *
 from .models_hr import *

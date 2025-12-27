@@ -3,10 +3,12 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h2 class="text-xl font-bold">Payment Tracking</h2>
-        <p class="text-gray-500">Monitor vendor payment status and history</p>
+        <p class="text-gray-500">Monitor vendor payment status, outstanding balances, and payment history</p>
       </div>
       <div class="flex gap-2">
-        <UButton icon="i-heroicons-table-cells" variant="outline" size="sm" @click="exportData">Export</UButton>
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm">Export</UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchData">Refresh</UButton>
       </div>
     </div>
@@ -197,6 +199,12 @@ const historyColumns = [
   { key: 'reference', label: 'Reference' }
 ]
 
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
+
 const payForm = reactive({
   amount: 0,
   payment_method: 'Bank Transfer',
@@ -273,15 +281,37 @@ const submitPayment = async () => {
   }
 }
 
-const exportData = () => {
-  const data = payments.value.map(p => ({
+const exportData = (format: string) => {
+  const data = payments.value.map((p: any) => ({
     'Date': formatDate(p.payment_date), 'Bill': p.bill_number, 'Vendor': p.vendor_name,
-    'Amount': p.amount, 'Method': p.payment_method, 'Reference': p.reference
+    'Amount': p.amount, 'Method': p.payment_method, 'Reference': p.reference || ''
   }))
-  const headers = Object.keys(data[0] || {})
-  const csv = [headers.join(','), ...data.map(row => headers.map(h => `"${row[h] || ''}"`).join(','))].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'payments.csv'; a.click()
+  
+  if (format === 'csv' || format === 'xls') {
+    const headers = Object.keys(data[0] || {})
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map((row: any) => headers.map(h => `"${row[h] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `payment_history.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `Payment history exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Payment History</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Payment History Report</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <p>Total Outstanding: Rp ${formatNumber(totalOutstanding.value)}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map((row: any) => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
+  }
 }
 
 onMounted(() => { fetchData() })

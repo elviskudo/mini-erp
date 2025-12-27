@@ -181,16 +181,15 @@ async def seed_menus(db):
         {"code": "manufacturing", "label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "path": None, "sort_order": 2},
         {"code": "inventory", "label": "Inventory", "icon": "i-heroicons-cube", "path": None, "sort_order": 3},
         {"code": "procurement", "label": "Procurement", "icon": "i-heroicons-shopping-cart", "path": None, "sort_order": 4},
-        {"code": "qc", "label": "Quality Control", "icon": "i-heroicons-beaker", "path": "/qc/inspections", "sort_order": 5},
-        {"code": "logistics", "label": "Logistics", "icon": "i-heroicons-truck", "path": "/logistics/delivery", "sort_order": 6},
-        {"code": "finance", "label": "Finance", "icon": "i-heroicons-banknotes", "path": None, "sort_order": 7},
-        {"code": "hr", "label": "HR & Payroll", "icon": "i-heroicons-user-group", "path": None, "sort_order": 8},
-        {"code": "crm", "label": "CRM & Sales", "icon": "i-heroicons-briefcase", "path": None, "sort_order": 9},
-        {"code": "projects", "label": "Projects", "icon": "i-heroicons-clipboard-document-list", "path": None, "sort_order": 10},
-        {"code": "maintenance", "label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "path": None, "sort_order": 11},
-        {"code": "portal", "label": "B2B Portal", "icon": "i-heroicons-globe-alt", "path": None, "sort_order": 12},
-        {"code": "compliance", "label": "Compliance", "icon": "i-heroicons-shield-check", "path": "/compliance", "sort_order": 13},
-        {"code": "config", "label": "Config", "icon": "i-heroicons-cog-6-tooth", "path": "/setup", "sort_order": 99},
+        {"code": "logistics", "label": "Logistics", "icon": "i-heroicons-truck", "path": None, "sort_order": 5},
+        {"code": "crm", "label": "CRM & Sales", "icon": "i-heroicons-users", "path": None, "sort_order": 6},
+        {"code": "projects", "label": "Projects", "icon": "i-heroicons-clipboard-document-list", "path": "/projects", "sort_order": 7},
+        {"code": "maintenance", "label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "path": "/maintenance", "sort_order": 8},
+        {"code": "hr", "label": "HR & Payroll", "icon": "i-heroicons-user-group", "path": None, "sort_order": 9},
+        {"code": "finance", "label": "Finance", "icon": "i-heroicons-banknotes", "path": None, "sort_order": 10},
+        {"code": "portal", "label": "B2B Portal", "icon": "i-heroicons-building-storefront", "path": "/portal/shop", "sort_order": 11},
+        {"code": "compliance", "label": "Compliance", "icon": "i-heroicons-shield-check", "path": "/compliance", "sort_order": 12},
+        {"code": "config", "label": "Setup", "icon": "i-heroicons-cog-6-tooth", "path": "/setup", "sort_order": 99},
     ]
     
     # Create parent menus first
@@ -225,8 +224,20 @@ async def seed_menus(db):
         # HR children
         {"code": "hr.employees", "label": "Employees", "path": "/hr/employees", "parent_code": "hr", "sort_order": 1},
         {"code": "hr.payroll", "label": "Payroll Run", "path": "/hr/payroll", "parent_code": "hr", "sort_order": 2},
+        # Logistics children
+        {"code": "logistics.delivery", "label": "Delivery Orders", "path": "/logistics/delivery", "parent_code": "logistics", "sort_order": 1},
+        {"code": "logistics.transfers", "label": "Stock Transfers", "path": "/logistics/transfers", "parent_code": "logistics", "sort_order": 2},
+        {"code": "logistics.picking", "label": "Stock Picking", "path": "/logistics/picking", "parent_code": "logistics", "sort_order": 3},
+        {"code": "logistics.shipments", "label": "Shipments", "path": "/logistics/shipments", "parent_code": "logistics", "sort_order": 4},
+        {"code": "logistics.returns", "label": "Returns", "path": "/logistics/returns", "parent_code": "logistics", "sort_order": 5},
+        {"code": "logistics.couriers", "label": "Couriers", "path": "/logistics/couriers", "parent_code": "logistics", "sort_order": 6},
         # CRM children
-        {"code": "crm.orders", "label": "Sales Orders", "path": "/crm/orders", "parent_code": "crm", "sort_order": 1},
+        {"code": "crm.leads", "label": "Leads", "path": "/crm/leads", "parent_code": "crm", "sort_order": 1},
+        {"code": "crm.opportunities", "label": "Opportunities", "path": "/crm/opportunities", "parent_code": "crm", "sort_order": 2},
+        {"code": "crm.customers", "label": "Customers", "path": "/crm/customers", "parent_code": "crm", "sort_order": 3},
+        {"code": "crm.activities", "label": "Activities", "path": "/crm/activities", "parent_code": "crm", "sort_order": 4},
+        {"code": "crm.pipeline", "label": "Pipeline", "path": "/crm/pipeline", "parent_code": "crm", "sort_order": 5},
+        {"code": "crm.orders", "label": "Sales Orders", "path": "/crm/orders", "parent_code": "crm", "sort_order": 6},
         # Projects children
         {"code": "projects.all", "label": "All Projects", "path": "/projects", "parent_code": "projects", "sort_order": 1},
         # Maintenance children

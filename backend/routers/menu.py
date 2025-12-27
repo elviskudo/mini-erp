@@ -50,17 +50,6 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Production Dashboard", "to": "/dashboard/production"},
             {"label": "Failure Analysis", "to": "/dashboard/failures"}
         ]},
-        {"label": "Procurement", "icon": "i-heroicons-shopping-cart", "children": [
-            {"label": "Vendors", "to": "/procurement/vendors"},
-            {"label": "Product Catalog", "to": "/procurement/products"},
-            {"label": "Purchase Requests", "to": "/procurement/requests"},
-            {"label": "RFQ", "to": "/procurement/rfq"},
-            {"label": "Purchase Orders", "to": "/procurement/orders"},
-            {"label": "Goods Receipt", "to": "/procurement/grn"},
-            {"label": "Vendor Bills", "to": "/procurement/bills"},
-            {"label": "Payments", "to": "/procurement/payments"},
-            {"label": "Analytics", "to": "/procurement/analytics"}
-        ]},
         {"label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "children": [
             {"label": "Work Centers", "to": "/manufacturing/work-centers"},
             {"label": "Products & BOM", "to": "/manufacturing/products"},
@@ -82,24 +71,49 @@ def get_hardcoded_menus(user_role: str) -> list:
                 {"label": "Adjustment", "to": "/inventory/opname/adjustment"}
             ]}
         ]},
-        {"label": "Logistics", "icon": "i-heroicons-truck", "to": "/logistics/delivery"},
+        {"label": "Procurement", "icon": "i-heroicons-shopping-cart", "children": [
+            {"label": "Vendors", "to": "/procurement/vendors"},
+            {"label": "Product Catalog", "to": "/procurement/products"},
+            {"label": "Purchase Requests", "to": "/procurement/requests"},
+            {"label": "RFQ", "to": "/procurement/rfq"},
+            {"label": "Purchase Orders", "to": "/procurement/orders"},
+            {"label": "Goods Receipt", "to": "/procurement/grn"},
+            {"label": "Vendor Bills", "to": "/procurement/bills"},
+            {"label": "Payments", "to": "/procurement/payments"},
+            {"label": "Analytics", "to": "/procurement/analytics"}
+        ]},
+        {"label": "Logistics", "icon": "i-heroicons-truck", "children": [
+            {"label": "Delivery Orders", "to": "/logistics/delivery"},
+            {"label": "Stock Transfers", "to": "/logistics/transfers"},
+            {"label": "Stock Picking", "to": "/logistics/picking"},
+            {"label": "Shipments", "to": "/logistics/shipments"},
+            {"label": "Returns", "to": "/logistics/returns"},
+            {"label": "Couriers", "to": "/logistics/couriers"}
+        ]},
+        {"label": "CRM", "icon": "i-heroicons-users", "children": [
+            {"label": "Leads", "to": "/crm/leads"},
+            {"label": "Opportunities", "to": "/crm/opportunities"},
+            {"label": "Customers", "to": "/crm/customers"},
+            {"label": "Activities", "to": "/crm/activities"},
+            {"label": "Pipeline", "to": "/crm/pipeline"},
+            {"label": "Sales Orders", "to": "/crm/orders"}
+        ]},
+        {"label": "Projects", "icon": "i-heroicons-clipboard-document-list", "to": "/projects"},
+        {"label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "to": "/maintenance"},
+        {"label": "HR & Payroll", "icon": "i-heroicons-user-group", "children": [
+            {"label": "Employees", "to": "/hr/employees"},
+            {"label": "Payroll Run", "to": "/hr/payroll"}
+        ]},
         {"label": "Finance", "icon": "i-heroicons-banknotes", "children": [
             {"label": "Chart of Accounts", "to": "/finance/coa"},
             {"label": "General Ledger", "to": "/finance/gl"},
             {"label": "Reports", "to": "/finance/reports"},
             {"label": "Fixed Assets", "to": "/finance/assets"}
         ]},
-        {"label": "HR & Payroll", "icon": "i-heroicons-user-group", "children": [
-            {"label": "Employees", "to": "/hr/employees"},
-            {"label": "Payroll Run", "to": "/hr/payroll"}
-        ]},
-        {"label": "CRM", "icon": "i-heroicons-users", "to": "/crm/orders"},
-        {"label": "Projects", "icon": "i-heroicons-clipboard-document-list", "to": "/projects"},
-        {"label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "to": "/maintenance"},
         {"label": "B2B Portal", "icon": "i-heroicons-building-storefront", "to": "/portal/shop"},
         {"label": "Compliance", "icon": "i-heroicons-shield-check", "to": "/compliance"},
         {"label": "Users", "icon": "i-heroicons-user-circle", "to": "/users"},
-        {"label": "Config", "icon": "i-heroicons-cog-6-tooth", "to": "/setup"}
+        {"label": "Setup", "icon": "i-heroicons-cog-6-tooth", "to": "/setup"}
     ]
     
     # Admin / Manager see all
@@ -137,8 +151,8 @@ async def get_user_menus(
     user_role = current_user.role.value if current_user.role else 'STAFF'
     tenant_id = current_user.tenant_id
     
-    # ADMIN always sees all menus - no restrictions
-    if user_role == 'ADMIN':
+    # ADMIN and MANAGER always see all menus - no restrictions
+    if user_role in ['ADMIN', 'MANAGER']:
         return get_hardcoded_menus(user_role)
     
     # If no tenant_id, use hardcoded fallback (demo/seed users)

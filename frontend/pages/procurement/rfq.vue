@@ -3,9 +3,12 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h2 class="text-xl font-bold">Request for Quotation</h2>
-        <p class="text-gray-500">Request price quotes from multiple vendors</p>
+        <p class="text-gray-500">Request price quotes from multiple vendors before placing orders</p>
       </div>
       <div class="flex gap-2">
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm">Export</UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchData">Refresh</UButton>
         <UButton icon="i-heroicons-plus" @click="openCreate">New RFQ</UButton>
       </div>
@@ -54,6 +57,7 @@
         <template #deadline-data="{ row }">
           <span v-if="row.deadline" :class="isOverdue(row.deadline) ? 'text-red-600' : ''">
             {{ formatDate(row.deadline) }}
+            <span v-if="isOverdue(row.deadline)" class="text-xs"> (Overdue)</span>
           </span>
           <span v-else class="text-gray-400">-</span>
         </template>
@@ -79,39 +83,61 @@
     <!-- Create RFQ Modal -->
     <FormSlideover 
       v-model="isOpen" 
-      title="Create RFQ"
+      title="Create Request for Quotation"
       :loading="submitting"
       @submit="save"
     >
       <div class="space-y-4">
-        <UFormGroup label="Deadline" hint="Quote submission deadline" :ui="{ hint: 'text-xs text-gray-400' }">
+        <p class="text-sm text-gray-500 pb-2 border-b">Create a new RFQ to request price quotes from multiple vendors. Select products and vendors to invite.</p>
+        
+        <UFormGroup label="Quote Deadline" hint="Last date vendors can submit their quotations" :ui="{ hint: 'text-xs text-gray-400' }">
           <UInput v-model="form.deadline" type="date" />
         </UFormGroup>
         
-        <UFormGroup label="Notes">
-          <UTextarea v-model="form.notes" rows="2" placeholder="Requirements or specifications..." />
+        <UFormGroup label="Priority Level" hint="Urgency of this RFQ request" :ui="{ hint: 'text-xs text-gray-400' }">
+          <USelect v-model="form.priority" :options="priorityOptions" />
         </UFormGroup>
         
-        <!-- Items -->
+        <UFormGroup label="Notes / Requirements" hint="Special requirements, specifications, or terms for this quotation" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UTextarea v-model="form.notes" rows="2" placeholder="e.g., Delivery must be within 2 weeks, samples required before order..." />
+        </UFormGroup>
+        
+        <!-- Items Section -->
         <div class="border-t pt-4">
           <div class="flex justify-between items-center mb-3">
-            <h4 class="font-medium">Request Items</h4>
+            <div>
+              <h4 class="font-medium">Requested Items</h4>
+              <p class="text-xs text-gray-400">Products you want to receive quotes for</p>
+            </div>
             <UButton size="xs" icon="i-heroicons-plus" @click="addItem">Add Item</UButton>
           </div>
+          <div v-if="form.items.length === 0" class="text-center py-4 text-gray-400 text-sm border rounded-lg">
+            No items added yet. Click "Add Item" to add products.
+          </div>
           <div v-for="(item, idx) in form.items" :key="idx" class="flex gap-2 mb-2">
-            <USelect v-model="item.product_id" :options="productOptions" placeholder="Product" class="flex-1" size="sm" />
+            <USelect v-model="item.product_id" :options="productOptions" placeholder="Select Product..." class="flex-1" size="sm" />
             <UInput v-model.number="item.quantity" type="number" placeholder="Qty" class="w-20" size="sm" />
+            <UInput v-model="item.specifications" placeholder="Specifications" class="flex-1" size="sm" />
             <UButton icon="i-heroicons-trash" size="xs" color="red" variant="ghost" @click="form.items.splice(idx, 1)" />
           </div>
         </div>
         
-        <!-- Vendors -->
+        <!-- Vendors Section -->
         <div class="border-t pt-4">
-          <div class="flex justify-between items-center mb-3">
+          <div class="mb-3">
             <h4 class="font-medium">Invite Vendors</h4>
+            <p class="text-xs text-gray-400">Select vendors who will receive this RFQ</p>
           </div>
-          <div class="space-y-2">
-            <UCheckbox v-for="v in vendors" :key="v.id" v-model="form.vendor_ids" :value="v.id" :label="v.name" />
+          <div v-if="vendors.length === 0" class="text-center py-4 text-gray-400 text-sm border rounded-lg">
+            No vendors available. Create vendors first in the Vendors page.
+          </div>
+          <div class="space-y-2 max-h-40 overflow-y-auto">
+            <UCheckbox v-for="v in vendors" :key="v.id" v-model="form.vendor_ids" :value="v.id">
+              <template #label>
+                <span class="font-medium">{{ v.name }}</span>
+                <span v-if="v.rating" class="text-xs text-gray-400 ml-2">Rating: {{ v.rating }}</span>
+              </template>
+            </UCheckbox>
           </div>
         </div>
       </div>
@@ -132,8 +158,8 @@
         
         <div class="space-y-4">
           <div>
-            <h4 class="font-medium mb-2">Request Items</h4>
-            <UTable :columns="[{key:'product',label:'Product'},{key:'quantity',label:'Qty'}]" :rows="selectedRFQ.items || []" />
+            <h4 class="font-medium mb-2">Requested Items</h4>
+            <UTable :columns="[{key:'product',label:'Product'},{key:'quantity',label:'Qty'},{key:'specifications',label:'Specs'}]" :rows="selectedRFQ.items || []" />
           </div>
           
           <div class="border-t pt-4">
@@ -142,12 +168,13 @@
               <div class="flex justify-between items-center">
                 <div>
                   <p class="font-medium">{{ v.vendor_name }}</p>
-                  <p v-if="v.quoted_amount" class="text-sm text-green-600">Quote: Rp {{ formatNumber(v.quoted_amount) }}</p>
+                  <p v-if="v.quoted_amount" class="text-sm text-green-600">Quote: Rp {{ formatNumber(v.quoted_amount) }} | Delivery: {{ v.delivery_days }} days</p>
                   <p v-else class="text-sm text-gray-400">Awaiting quote</p>
                 </div>
                 <UBadge v-if="v.is_selected" color="green">Selected</UBadge>
               </div>
             </div>
+            <p v-if="!selectedRFQ.vendors?.length" class="text-center text-gray-400 py-4">No vendors invited yet</p>
           </div>
         </div>
         
@@ -184,8 +211,21 @@ const columns = [
   { key: 'actions', label: '' }
 ]
 
+const priorityOptions = [
+  { label: 'Normal', value: 'Normal' },
+  { label: 'High', value: 'High' },
+  { label: 'Urgent', value: 'Urgent' }
+]
+
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
+
 const form = reactive({
   deadline: '',
+  priority: 'Normal',
   notes: '',
   items: [] as any[],
   vendor_ids: [] as string[]
@@ -197,7 +237,7 @@ const receivedCount = computed(() => rfqs.value.filter(r => r.status === 'Receiv
 const productOptions = computed(() => products.value.map(p => ({ label: `${p.code} - ${p.name}`, value: p.id })))
 
 const formatNumber = (num: number) => new Intl.NumberFormat('id-ID').format(num)
-const formatDate = (date: string) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+const formatDate = (date: string) => date ? new Date(date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
 const isOverdue = (date: string) => new Date(date) < new Date()
 
 const getStatusColor = (status: string) => {
@@ -206,7 +246,7 @@ const getStatusColor = (status: string) => {
 }
 
 const addItem = () => {
-  form.items.push({ product_id: '', quantity: 1 })
+  form.items.push({ product_id: '', quantity: 1, specifications: '' })
 }
 
 const fetchData = async () => {
@@ -228,7 +268,7 @@ const fetchData = async () => {
 }
 
 const openCreate = () => {
-  Object.assign(form, { deadline: '', notes: '', items: [], vendor_ids: [] })
+  Object.assign(form, { deadline: '', priority: 'Normal', notes: '', items: [], vendor_ids: [] })
   isOpen.value = true
 }
 
@@ -238,6 +278,14 @@ const viewDetails = (row: any) => {
 }
 
 const save = async () => {
+  if (form.items.length === 0) {
+    toast.add({ title: 'Validation Error', description: 'Please add at least one item', color: 'red' })
+    return
+  }
+  if (form.vendor_ids.length === 0) {
+    toast.add({ title: 'Validation Error', description: 'Please select at least one vendor', color: 'red' })
+    return
+  }
   submitting.value = true
   try {
     await $api.post('/procurement/rfqs', form)
@@ -262,9 +310,44 @@ const sendRFQ = async (row: any) => {
 }
 
 const selectVendor = async (row: any) => {
-  // Show vendor selection modal (simplified)
-  toast.add({ title: 'Select', description: 'Select vendor from detail view', color: 'blue' })
+  toast.add({ title: 'Select Vendor', description: 'Open detail view to select a vendor', color: 'blue' })
   viewDetails(row)
+}
+
+const exportData = (format: string) => {
+  const data = rfqs.value.map(r => ({
+    'RFQ #': r.rfq_number,
+    'Deadline': formatDate(r.deadline),
+    'Status': r.status,
+    'Items': r.items_count || 0,
+    'Vendors': r.vendors_count || 0,
+    'Notes': r.notes || ''
+  }))
+  
+  if (format === 'csv' || format === 'xls') {
+    const headers = Object.keys(data[0] || {})
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map(row => headers.map(h => `"${row[h as keyof typeof row] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `rfq_list.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `RFQ list exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Request for Quotation</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Request for Quotation List</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map(row => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
+  }
 }
 
 onMounted(() => { fetchData() })

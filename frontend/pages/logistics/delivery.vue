@@ -1,65 +1,299 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold text-gray-900">Delivery Orders (Logistics)</h2>
-      <UButton icon="i-heroicons-plus" color="primary" @click="openCreateModal">Create DO</UButton>
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-bold">Delivery Orders</h2>
+        <p class="text-gray-500">Manage outbound deliveries to customers</p>
+      </div>
+      <div class="flex gap-2">
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm">Export</UButton>
+        </UDropdown>
+        <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchData">Refresh</UButton>
+        <UButton icon="i-heroicons-plus" @click="openCreate">Create DO</UButton>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold">{{ orders.length }}</p>
+          <p class="text-sm text-gray-500">Total DOs</p>
+        </div>
+      </UCard>
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-yellow-600">{{ draftCount }}</p>
+          <p class="text-sm text-gray-500">Draft</p>
+        </div>
+      </UCard>
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-blue-600">{{ shippedCount }}</p>
+          <p class="text-sm text-gray-500">Shipped</p>
+        </div>
+      </UCard>
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-green-600">{{ deliveredCount }}</p>
+          <p class="text-sm text-gray-500">Delivered</p>
+        </div>
+      </UCard>
     </div>
 
     <UCard>
-      <UTable :columns="columns" :rows="orders" :loading="loading">
-         <template #status-data="{ row }">
-            <UBadge :color="getStatusColor(row.status)" variant="subtle">{{ row.status }}</UBadge>
+      <DataTable 
+        :columns="columns" 
+        :rows="orders" 
+        :loading="loading"
+        searchable
+        :search-keys="['do_number', 'so_id', 'customer_name']"
+        empty-message="No delivery orders yet. Create one to ship goods."
+      >
+        <template #do_number-data="{ row }">
+          <span class="font-mono font-medium text-blue-600">{{ row.do_number }}</span>
         </template>
-         <template #items-data="{ row }">
-            {{ row.items?.length || 0 }} items
+        <template #so_id-data="{ row }">
+          <span class="text-gray-600">{{ row.so_id || '-' }}</span>
+        </template>
+        <template #customer_name-data="{ row }">
+          <span>{{ row.customer_name || 'Walk-in' }}</span>
+        </template>
+        <template #items_count-data="{ row }">
+          <span class="text-gray-500">{{ row.items_count }} items</span>
+        </template>
+        <template #created_at-data="{ row }">
+          {{ formatDate(row.created_at) }}
+        </template>
+        <template #status-data="{ row }">
+          <UBadge :color="getStatusColor(row.status)" variant="subtle">{{ row.status }}</UBadge>
         </template>
         <template #actions-data="{ row }">
-             <UButton v-if="row.status === 'Draft'" size="xs" color="blue" variant="soft" :loading="shippingId === row.id" @click="shipOrder(row.id)">Ship Order</UButton>
+          <div class="flex gap-1">
+            <UButton icon="i-heroicons-eye" size="xs" color="gray" variant="ghost" @click="viewDetails(row)" />
+            <UButton 
+              v-if="row.status === 'Draft'" 
+              icon="i-heroicons-truck" 
+              size="xs" 
+              color="blue" 
+              variant="ghost" 
+              :loading="shippingId === row.id"
+              @click="shipOrder(row)" 
+              title="Ship Order" 
+            />
+          </div>
         </template>
-      </UTable>
+      </DataTable>
     </UCard>
 
-    <!-- Create DO Modal -->
-    <UModal v-model="isOpen" :ui="{ width: 'w-full sm:max-w-2xl' }">
-      <UCard :ui="{ ring: '', divide: 'divide-y divide-gray-100' }">
+    <!-- Create DO Slideover -->
+    <FormSlideover 
+      v-model="isOpen" 
+      title="Create Delivery Order"
+      :loading="submitting"
+      @submit="createDo"
+    >
+      <div class="space-y-4">
+        <p class="text-sm text-gray-500 pb-2 border-b">Create a delivery order to ship products to customers. Link to a Sales Order or create direct.</p>
+        
+        <UFormGroup label="Sales Order Reference" hint="Optional link to original SO" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UInput v-model="form.so_id" placeholder="e.g., SO-2024-0001" />
+        </UFormGroup>
+        
+        <!-- Customer Section -->
+        <div class="border-t pt-4">
+          <h4 class="font-medium mb-3 flex items-center gap-2">
+            <UIcon name="i-heroicons-user" />
+            Customer Information
+          </h4>
+          <p class="text-xs text-gray-400 mb-3">Select existing customer or enter manually. Customers are managed in <NuxtLink to="/ar/customers" class="text-blue-600 underline">AR → Customers</NuxtLink></p>
+          
+          <UFormGroup label="Select Customer" hint="Choose from registered customers" :ui="{ hint: 'text-xs text-gray-400' }">
+            <USelect 
+              v-model="form.customer_id" 
+              :options="customerOptions" 
+              placeholder="Select existing customer..." 
+              searchable 
+              @change="onCustomerSelect"
+            />
+          </UFormGroup>
+          
+          <div class="text-center text-gray-400 text-xs my-2">— OR enter manually —</div>
+          
+          <UFormGroup label="Customer Name" hint="For walk-in or new customers" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.customer_name" placeholder="e.g., PT ABC" />
+          </UFormGroup>
+        </div>
+        
+        <!-- Shipping Address with OpenStreetMap -->
+        <div class="border-t pt-4">
+          <h4 class="font-medium mb-3 flex items-center gap-2">
+            <UIcon name="i-heroicons-map-pin" />
+            Shipping Address
+          </h4>
+          
+          <UFormGroup label="Search Address" hint="Search location via OpenStreetMap" :ui="{ hint: 'text-xs text-gray-400' }">
+            <div class="relative">
+              <UInput 
+                v-model="addressSearch" 
+                placeholder="Type address to search..." 
+                @input="searchAddress"
+              />
+              <div v-if="addressLoading" class="absolute right-3 top-2">
+                <UIcon name="i-heroicons-arrow-path" class="animate-spin" />
+              </div>
+            </div>
+          </UFormGroup>
+          
+          <!-- Address search results -->
+          <div v-if="addressResults.length > 0" class="border rounded-lg max-h-40 overflow-y-auto mb-3">
+            <button 
+              v-for="(addr, idx) in addressResults" 
+              :key="idx"
+              type="button"
+              class="w-full text-left p-2 hover:bg-gray-100 border-b last:border-b-0 text-sm"
+              @click="selectAddress(addr)"
+            >
+              <UIcon name="i-heroicons-map-pin" class="text-gray-400 mr-1" />
+              {{ addr.display_name }}
+            </button>
+          </div>
+          
+          <UFormGroup label="Full Address" hint="Delivery destination (can be edited)" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UTextarea v-model="form.shipping_address" rows="2" placeholder="Full delivery address..." />
+          </UFormGroup>
+          
+          <!-- Mini map preview -->
+          <div v-if="selectedCoords" class="mt-2 rounded-lg overflow-hidden border h-32">
+            <iframe 
+              :src="`https://www.openstreetmap.org/export/embed.html?bbox=${selectedCoords.lon - 0.005}%2C${selectedCoords.lat - 0.005}%2C${selectedCoords.lon + 0.005}%2C${selectedCoords.lat + 0.005}&layer=mapnik&marker=${selectedCoords.lat}%2C${selectedCoords.lon}`"
+              class="w-full h-full"
+              frameborder="0"
+            ></iframe>
+          </div>
+        </div>
+        
+        <!-- Items Section -->
+        <div class="border-t pt-4">
+          <div class="flex justify-between items-center mb-3">
+            <div>
+              <h4 class="font-medium flex items-center gap-2">
+                <UIcon name="i-heroicons-cube" />
+                Items to Ship
+              </h4>
+              <p class="text-xs text-gray-400">Select products from available batches. Batches are created from <NuxtLink to="/procurement/grn" class="text-blue-600 underline">Goods Receipt</NuxtLink> or <NuxtLink to="/manufacturing/production" class="text-blue-600 underline">Production</NuxtLink></p>
+            </div>
+            <UButton size="xs" icon="i-heroicons-plus" @click="addItem">Add Item</UButton>
+          </div>
+          
+          <div v-if="form.items.length === 0" class="text-center py-4 text-gray-400 text-sm border rounded-lg">
+            No items added. Click "Add Item" to select products.
+          </div>
+          
+          <div class="space-y-3 max-h-60 overflow-y-auto">
+            <div v-for="(item, index) in form.items" :key="index" class="p-3 border rounded-lg bg-gray-50">
+              <div class="flex gap-2 items-start">
+                <UFormGroup label="Product" required class="flex-1">
+                  <USelect 
+                    v-model="item.product_id" 
+                    :options="productOptions" 
+                    placeholder="Select Product..." 
+                    size="sm"
+                    @change="onProductChange(index)"
+                  />
+                </UFormGroup>
+                <UFormGroup label="Qty" required class="w-20">
+                  <UInput v-model.number="item.quantity" type="number" min="1" step="1" size="sm" />
+                </UFormGroup>
+                <UButton 
+                  icon="i-heroicons-trash" 
+                  color="red" 
+                  variant="ghost" 
+                  size="xs"
+                  class="mt-6" 
+                  @click="removeItem(index)" 
+                />
+              </div>
+              <UFormGroup label="Batch to Pick From" class="mt-2" :ui="{ hint: 'text-xs text-gray-400' }">
+                <template #hint>
+                  Select stock batch. Created from GRN or Production. <NuxtLink to="/inventory/stock" class="text-blue-600 underline">View Stock</NuxtLink>
+                </template>
+                <USelect 
+                  v-model="item.batch_id" 
+                  :options="getBatchesForProduct(item.product_id)" 
+                  placeholder="Select Batch (FIFO recommended)..." 
+                  size="sm"
+                />
+              </UFormGroup>
+              <p v-if="item.product_id && getBatchesForProduct(item.product_id).length === 0" class="text-xs text-red-500 mt-1">
+                No batches available for this product. Receive stock first.
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <UFormGroup label="Notes" hint="Internal notes or special instructions" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UTextarea v-model="form.notes" rows="2" placeholder="e.g., Handle with care, priority shipment..." />
+        </UFormGroup>
+      </div>
+    </FormSlideover>
+
+    <!-- View Details Modal -->
+    <UModal v-model="showDetails" :ui="{ width: 'max-w-2xl' }">
+      <UCard v-if="selectedOrder">
         <template #header>
-          <h3 class="text-base font-semibold leading-6 text-gray-900">New Delivery Order</h3>
+          <div class="flex justify-between items-center">
+            <div>
+              <h3 class="text-lg font-semibold">{{ selectedOrder.do_number }}</h3>
+              <p class="text-sm text-gray-500">SO: {{ selectedOrder.so_id || 'Direct' }}</p>
+            </div>
+            <UBadge :color="getStatusColor(selectedOrder.status)" size="lg">{{ selectedOrder.status }}</UBadge>
+          </div>
         </template>
-
-        <form @submit.prevent="createDo" class="space-y-4">
-             <UFormGroup label="Sales Order Reference" name="so_id" required hint="Link to original sales order" :ui="{ hint: 'text-xs text-gray-400' }">
-                <UInput v-model="form.so_id" placeholder="e.g. SO-1001" />
-            </UFormGroup>
-
-            <div class="border-t pt-2">
-                <div class="flex justify-between mb-2">
-                    <span class="font-medium">Items to Ship</span>
-                    <UButton size="xs" icon="i-heroicons-plus" variant="soft" @click="addItem">Add Item</UButton>
-                </div>
-                
-                 <div class="space-y-2 max-h-60 overflow-y-auto">
-                    <div v-for="(item, index) in form.items" :key="index" class="p-2 border rounded bg-gray-50 space-y-2">
-                        <div class="flex gap-2">
-                             <UFormGroup label="Product" required hint="Select product" :ui="{ hint: 'text-xs text-gray-400' }" class="flex-1">
-                                <USelect v-model="item.product_id" :options="products" option-attribute="name" value-attribute="id" placeholder="Select Product" />
-                            </UFormGroup>
-                            <UFormGroup label="Qty" required hint="Quantity" :ui="{ hint: 'text-xs text-gray-400' }" class="w-24">
-                                <UInput v-model="item.quantity" type="number" step="1" min="1" />
-                            </UFormGroup>
-                             <UButton icon="i-heroicons-trash" color="red" variant="ghost" class="mt-6" @click="removeItem(index)" />
-                        </div>
-                         <UFormGroup label="Batch to Pick From" required hint="Select stock batch" :ui="{ hint: 'text-xs text-gray-400' }">
-                             <USelect v-model="item.batch_id" :options="getBatchesForProduct(item.product_id)" option-attribute="label" value-attribute="id" placeholder="Select Batch..." />
-                        </UFormGroup>
-                    </div>
-                </div>
+        
+        <div class="space-y-4">
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span class="text-gray-500">Customer:</span>
+              <span class="ml-2 font-medium">{{ selectedOrder.customer_name || 'Walk-in' }}</span>
             </div>
-
-            <div class="flex justify-end gap-2 mt-4">
-                <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" :loading="submitting" :disabled="!form.so_id || form.items.length === 0">Create DO</UButton>
+            <div>
+              <span class="text-gray-500">Created:</span>
+              <span class="ml-2">{{ formatDate(selectedOrder.created_at) }}</span>
             </div>
-        </form>
+          </div>
+          
+          <div v-if="selectedOrder.shipping_address" class="text-sm">
+            <span class="text-gray-500">Address:</span>
+            <p class="mt-1">{{ selectedOrder.shipping_address }}</p>
+          </div>
+          
+          <div class="border-t pt-4">
+            <h4 class="font-medium mb-2">Items ({{ selectedOrder.items?.length || 0 }})</h4>
+            <div v-for="item in (selectedOrder.items || [])" :key="item.id" class="flex justify-between items-center py-2 border-b">
+              <div>
+                <p class="font-medium">{{ item.product_name }}</p>
+                <p class="text-xs text-gray-400">Batch: {{ item.batch_number || 'N/A' }}</p>
+              </div>
+              <p class="font-bold">{{ item.quantity }}</p>
+            </div>
+          </div>
+        </div>
+        
+        <template #footer>
+          <div class="flex justify-end gap-2">
+            <UButton variant="ghost" @click="showDetails = false">Close</UButton>
+            <UButton 
+              v-if="selectedOrder.status === 'Draft'" 
+              icon="i-heroicons-truck" 
+              color="blue"
+              @click="shipOrder(selectedOrder); showDetails = false"
+            >
+              Ship Order
+            </UButton>
+          </div>
+        </template>
       </UCard>
     </UModal>
   </div>
@@ -67,91 +301,248 @@
 
 <script setup lang="ts">
 const { $api } = useNuxtApp()
-const isOpen = ref(false)
+const toast = useToast()
+
+definePageMeta({ middleware: 'auth' })
+
 const loading = ref(false)
 const submitting = ref(false)
+const isOpen = ref(false)
+const showDetails = ref(false)
 const shippingId = ref<string | null>(null)
 
-const orders = ref([])
-const products = ref([])
-const stock = ref([]) // To map batches
+const orders = ref<any[]>([])
+const products = ref<any[]>([])
+const stock = ref<any[]>([])
+const customers = ref<any[]>([])
+const selectedOrder = ref<any>(null)
+
+// Address search
+const addressSearch = ref('')
+const addressLoading = ref(false)
+const addressResults = ref<any[]>([])
+const selectedCoords = ref<{lat: number, lon: number} | null>(null)
 
 const columns = [
+  { key: 'do_number', label: 'DO Number', sortable: true },
   { key: 'so_id', label: 'SO Ref' },
+  { key: 'customer_name', label: 'Customer' },
+  { key: 'items_count', label: 'Items' },
+  { key: 'created_at', label: 'Date', sortable: true },
   { key: 'status', label: 'Status' },
-  { key: 'items', label: 'Items' },
-  { key: 'actions', label: 'Actions' }
+  { key: 'actions', label: '' }
 ]
 
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
+
 const form = reactive({
-    so_id: '',
-    items: [] as any[]
+  so_id: '',
+  customer_id: '',
+  customer_name: '',
+  shipping_address: '',
+  notes: '',
+  items: [] as any[]
 })
 
+const draftCount = computed(() => orders.value.filter(o => o.status === 'Draft').length)
+const shippedCount = computed(() => orders.value.filter(o => o.status === 'Shipped').length)
+const deliveredCount = computed(() => orders.value.filter(o => o.status === 'Delivered').length)
+
+const productOptions = computed(() => products.value.map(p => ({ label: `${p.code || ''} - ${p.name}`, value: p.id })))
+const customerOptions = computed(() => customers.value.map(c => ({ label: `${c.name}${c.phone ? ' - ' + c.phone : ''}`, value: c.id })))
+
+const formatDate = (date: string) => date ? new Date(date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+
 const getStatusColor = (status: string) => {
-    switch(status) {
-        case 'Draft': return 'gray'
-        case 'Shipped': return 'green'
-        default: return 'primary'
+  const colors: Record<string, string> = { Draft: 'yellow', Shipped: 'blue', Delivered: 'green' }
+  return colors[status] || 'gray'
+}
+
+const getBatchesForProduct = (productId: string) => {
+  if (!productId) return []
+  return stock.value
+    .filter((b: any) => b.product_id === productId && b.quantity_on_hand > 0)
+    .map((b: any) => ({
+      value: b.id,
+      label: `${b.batch_number} (Qty: ${b.quantity_on_hand})${b.expiration_date ? ' - Exp: ' + new Date(b.expiration_date).toLocaleDateString() : ''}`
+    }))
+}
+
+// OpenStreetMap address search with debounce
+let searchTimeout: any = null
+const searchAddress = () => {
+  clearTimeout(searchTimeout)
+  if (addressSearch.value.length < 3) {
+    addressResults.value = []
+    return
+  }
+  
+  searchTimeout = setTimeout(async () => {
+    addressLoading.value = true
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressSearch.value)}&countrycodes=id&limit=5`,
+        { headers: { 'Accept-Language': 'id' } }
+      )
+      addressResults.value = await response.json()
+    } catch (e) {
+      console.error('Address search failed:', e)
+    } finally {
+      addressLoading.value = false
     }
+  }, 500)
+}
+
+const selectAddress = (addr: any) => {
+  form.shipping_address = addr.display_name
+  selectedCoords.value = { lat: parseFloat(addr.lat), lon: parseFloat(addr.lon) }
+  addressResults.value = []
+  addressSearch.value = ''
+}
+
+const onCustomerSelect = () => {
+  const customer = customers.value.find(c => c.id === form.customer_id)
+  if (customer) {
+    form.customer_name = customer.name
+    if (customer.address) {
+      form.shipping_address = customer.address
+    }
+  }
 }
 
 const fetchData = async () => {
-    loading.value = true
-    try {
-        const [doRes, prodRes, stockRes] = await Promise.all([
-            $api.get('/delivery/orders'),
-            $api.get('/manufacturing/products'),
-            $api.get('/inventory/stock')
-        ])
-        orders.value = doRes.data
-        products.value = prodRes.data
-        stock.value = stockRes.data
-    } catch (e) { console.error(e) } 
-    finally { loading.value = false }
+  loading.value = true
+  try {
+    const [doRes, prodRes, stockRes, custRes] = await Promise.all([
+      $api.get('/delivery/orders').catch(() => ({ data: [] })),
+      $api.get('/manufacturing/products').catch(() => ({ data: [] })),
+      $api.get('/inventory/stock').catch(() => ({ data: [] })),
+      $api.get('/ar/customers').catch(() => ({ data: [] }))
+    ])
+    orders.value = doRes.data || []
+    products.value = prodRes.data || []
+    stock.value = stockRes.data || []
+    customers.value = custRes.data || []
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
 }
 
-// Filter batches for dropdown
-const getBatchesForProduct = (productId: string) => {
-    if (!productId) return []
-    return stock.value
-        .filter((b: any) => b.product_id === productId)
-        .map((b: any) => ({
-            id: b.id,
-            label: `${b.batch_number} (Qty: ${b.quantity_on_hand})`
-        }))
-}
-
-const openCreateModal = () => {
-    form.so_id = ''
-    form.items = [{ product_id: '', quantity: 1, batch_id: '' }]
-    isOpen.value = true
+const openCreate = () => {
+  Object.assign(form, {
+    so_id: '',
+    customer_id: '',
+    customer_name: '',
+    shipping_address: '',
+    notes: '',
+    items: [{ product_id: '', quantity: 1, batch_id: '' }]
+  })
+  addressSearch.value = ''
+  addressResults.value = []
+  selectedCoords.value = null
+  isOpen.value = true
 }
 
 const addItem = () => form.items.push({ product_id: '', quantity: 1, batch_id: '' })
 const removeItem = (idx: number) => form.items.splice(idx, 1)
 
+const onProductChange = (idx: number) => {
+  // Reset batch when product changes
+  form.items[idx].batch_id = ''
+}
+
+const viewDetails = async (row: any) => {
+  try {
+    const res = await $api.get(`/delivery/${row.id}`)
+    selectedOrder.value = res.data
+    showDetails.value = true
+  } catch (e) {
+    selectedOrder.value = row
+    showDetails.value = true
+  }
+}
+
 const createDo = async () => {
-    submitting.value = true
-    try {
-        await $api.post('/delivery/create', form)
-        isOpen.value = false
-        fetchData()
-    } catch (e) { alert('Failed') }
-    finally { submitting.value = false }
-}
-
-const shipOrder = async (id: string) => {
-    if(!confirm('Ship this order? Stock will be deducted.')) return
-    shippingId.value = id
-    try {
-        await $api.post(`/delivery/${id}/ship`)
-        fetchData()
-    } catch (e) { alert('Failed to ship (Check stock availability)') }
-    finally { shippingId.value = null }
-}
-
-onMounted(() => {
+  if (form.items.length === 0 || !form.items.some(i => i.product_id)) {
+    toast.add({ title: 'Validation Error', description: 'Please add at least one item with product selected', color: 'red' })
+    return
+  }
+  
+  // Filter out empty items
+  const validItems = form.items.filter(i => i.product_id && i.quantity > 0)
+  
+  submitting.value = true
+  try {
+    await $api.post('/delivery/create', {
+      ...form,
+      items: validItems
+    })
+    toast.add({ title: 'Created', description: 'Delivery order created successfully', color: 'green' })
+    isOpen.value = false
     fetchData()
-})
+  } catch (e: any) {
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to create delivery order', color: 'red' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+const shipOrder = async (row: any) => {
+  if (!confirm('Ship this order? Stock will be deducted from selected batches.')) return
+  
+  shippingId.value = row.id
+  try {
+    await $api.post(`/delivery/${row.id}/ship`)
+    toast.add({ title: 'Shipped', description: 'Order shipped successfully, stock deducted', color: 'green' })
+    fetchData()
+  } catch (e: any) {
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to ship (Check stock availability)', color: 'red' })
+  } finally {
+    shippingId.value = null
+  }
+}
+
+const exportData = (format: string) => {
+  const data = orders.value.map((o: any) => ({
+    'DO Number': o.do_number || '',
+    'SO Ref': o.so_id || '',
+    'Customer': o.customer_name || 'Walk-in',
+    'Items': o.items_count || 0,
+    'Status': o.status,
+    'Date': formatDate(o.created_at)
+  }))
+  
+  if (format === 'csv' || format === 'xls') {
+    const headers = Object.keys(data[0] || {})
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map((row: any) => headers.map(h => `"${row[h] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `delivery_orders.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `DOs exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Delivery Orders</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Delivery Orders Report</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map((row: any) => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
+  }
+}
+
+onMounted(() => { fetchData() })
 </script>

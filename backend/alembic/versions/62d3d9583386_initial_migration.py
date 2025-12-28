@@ -471,6 +471,145 @@ def upgrade() -> None:
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_approval_history_tenant_id ON approval_history(tenant_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_approval_history_entity_id ON approval_history(entity_id)")
+    
+    # ============ Projects Module ============
+    
+    # Create project enums
+    op.execute("DO $$ BEGIN CREATE TYPE projecttype AS ENUM ('R_AND_D', 'CUSTOMER_ORDER', 'INTERNAL_IMPROVEMENT', 'MAINTENANCE', 'CONSULTING'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE projectstatus AS ENUM ('DRAFT', 'PLANNING', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE projectpriority AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT', 'CRITICAL'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE expensecategory AS ENUM ('MATERIAL', 'LABOR', 'EQUIPMENT', 'TRAVEL', 'SOFTWARE', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE pmemberrole AS ENUM ('PROJECT_MANAGER', 'TEAM_LEAD', 'DEVELOPER', 'DESIGNER', 'QA', 'MEMBER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    
+    # Create projects table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id VARCHAR PRIMARY KEY,
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name VARCHAR NOT NULL,
+            code VARCHAR,
+            description TEXT,
+            type projecttype DEFAULT 'INTERNAL_IMPROVEMENT',
+            status projectstatus DEFAULT 'DRAFT',
+            priority projectpriority DEFAULT 'MEDIUM',
+            manager_id UUID REFERENCES users(id),
+            client_id UUID,
+            start_date TIMESTAMP,
+            end_date TIMESTAMP,
+            actual_end_date TIMESTAMP,
+            budget FLOAT DEFAULT 0.0,
+            tags JSONB DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_projects_tenant_id ON projects(tenant_id)")
+    
+    # Create project_tasks table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS project_tasks (
+            id VARCHAR PRIMARY KEY,
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name VARCHAR NOT NULL,
+            description TEXT,
+            wbs_code VARCHAR,
+            status VARCHAR DEFAULT 'TODO',
+            priority VARCHAR DEFAULT 'MEDIUM',
+            parent_id VARCHAR REFERENCES project_tasks(id),
+            start_date TIMESTAMP,
+            end_date TIMESTAMP,
+            progress FLOAT DEFAULT 0.0,
+            estimated_hours FLOAT DEFAULT 0.0,
+            actual_hours FLOAT DEFAULT 0.0,
+            assigned_to UUID REFERENCES users(id),
+            dependencies JSONB DEFAULT '[]',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            completed_at TIMESTAMP
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_project_tasks_tenant_id ON project_tasks(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_project_tasks_project_id ON project_tasks(project_id)")
+    
+    # Create project_members table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS project_members (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id),
+            role pmemberrole DEFAULT 'MEMBER',
+            hourly_rate FLOAT DEFAULT 0.0,
+            joined_at TIMESTAMP DEFAULT NOW(),
+            is_active BOOLEAN DEFAULT true
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_project_members_tenant_id ON project_members(tenant_id)")
+    
+    # Create time_entries table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS time_entries (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            task_id VARCHAR REFERENCES project_tasks(id) ON DELETE SET NULL,
+            user_id UUID NOT NULL REFERENCES users(id),
+            date DATE NOT NULL,
+            hours FLOAT NOT NULL,
+            description TEXT,
+            billable BOOLEAN DEFAULT true,
+            billed BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_time_entries_tenant_id ON time_entries(tenant_id)")
+    
+    # Create project_expenses table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS project_expenses (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            description VARCHAR NOT NULL,
+            category expensecategory DEFAULT 'OTHER',
+            amount FLOAT NOT NULL,
+            date DATE NOT NULL,
+            receipt_url VARCHAR,
+            notes TEXT,
+            submitted_by UUID REFERENCES users(id),
+            approved BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_project_expenses_tenant_id ON project_expenses(tenant_id)")
+    
+    # Create task_assignees table (many-to-many task-user assignment)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS task_assignees (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            task_id VARCHAR NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id),
+            assigned_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(task_id, user_id)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_task_assignees_tenant_id ON task_assignees(tenant_id)")
+    
+    # Create task_comments table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS task_comments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            task_id VARCHAR NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id),
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_task_comments_tenant_id ON task_comments(tenant_id)")
 
 
 def downgrade() -> None:

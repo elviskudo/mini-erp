@@ -24,8 +24,16 @@ class Customer(Base):
     phone = Column(String, nullable=True)
     address = Column(String, nullable=True)
     
+    # KTP fields for POS customer registration
+    ktp_number = Column(String, nullable=True, index=True)
+    ktp_image_url = Column(String, nullable=True)
+    birth_date = Column(DateTime, nullable=True)
+    
     credit_limit = Column(Float, default=0.0)
     current_balance = Column(Float, default=0.0)  # Denormalized for performance
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SalesInvoice(Base):

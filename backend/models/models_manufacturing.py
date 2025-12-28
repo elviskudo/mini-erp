@@ -12,6 +12,20 @@ class ProductType(str, enum.Enum):
     FINISHED_GOODS = "Finished Goods"
 
 
+class Category(Base):
+    """Product categories for organization and filtering"""
+    __tablename__ = "categories"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    image_url = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+
+
 class WorkCenter(Base):
     __tablename__ = "work_centers"
 
@@ -37,8 +51,13 @@ class Product(Base):
     type = Column(Enum(ProductType), default=ProductType.RAW_MATERIAL)
     uom = Column(String, default="pcs")  # Unit of Measure
     
+    # Category - FK to categories table
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True, index=True)
+    category = Column(String, nullable=True)  # Keep for backward compatibility
+    
     # Product origin
     is_manufactured = Column(Boolean, default=True)  # False = purchased externally
+    is_active = Column(Boolean, default=True)  # For POS filtering
     image_url = Column(Text, nullable=True)  # Base64 or URL for product image
     
     # Cost & Pricing
@@ -50,6 +69,9 @@ class Product(Base):
     # Cold chain requirements
     requires_cold_chain = Column(Boolean, default=False)
     max_storage_temp = Column(Float, nullable=True)  # Max allowed temperature
+
+    # Relationship
+    category_rel = relationship("Category", foreign_keys=[category_id])
 
 
 class BillOfMaterial(Base):

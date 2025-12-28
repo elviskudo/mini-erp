@@ -1,4 +1,3 @@
-
 services:
   postgres_db:
     image: postgres:15
@@ -93,6 +92,26 @@ services:
     ports:
       - "3333:3000"
       - "24678:24678"
+    depends_on:
+      - backend_api
+    command: npm run dev
+    restart: unless-stopped
+
+  pos_app:
+    build:
+      context: ./pos
+      dockerfile: Dockerfile
+    container_name: mini_erp_pos
+    volumes:
+      - ./pos:/app
+      - /app/node_modules
+    environment:
+      NUXT_PUBLIC_API_BASE: /api
+    networks:
+      - erp_network
+    ports:
+      - "3334:3000"
+      - "24679:24678"
     depends_on:
       - backend_api
     command: npm run dev

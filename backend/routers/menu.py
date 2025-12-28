@@ -51,6 +51,7 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Failure Analysis", "to": "/dashboard/failures"}
         ]},
         {"label": "Manufacturing", "icon": "i-heroicons-wrench-screwdriver", "children": [
+            {"label": "Categories", "to": "/manufacturing/categories"},
             {"label": "Work Centers", "to": "/manufacturing/work-centers"},
             {"label": "Products & BOM", "to": "/manufacturing/products"},
             {"label": "Routing", "to": "/manufacturing/routing"},
@@ -96,7 +97,8 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Customers", "to": "/crm/customers"},
             {"label": "Activities", "to": "/crm/activities"},
             {"label": "Pipeline", "to": "/crm/pipeline"},
-            {"label": "Sales Orders", "to": "/crm/orders"}
+            {"label": "Sales Orders", "to": "/crm/orders"},
+            {"label": "Promos", "to": "/crm/promos"}
         ]},
         {"label": "Projects", "icon": "i-heroicons-clipboard-document-list", "to": "/projects"},
         {"label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "to": "/maintenance"},

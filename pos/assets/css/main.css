@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* POS-specific styles */
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: linear-gradient(135deg, #fef3e2 0%, #fce7f3 100%);
+  min-height: 100vh;
+}
+
+/* Product card hover effect */
+.product-card {
+  @apply transition-all duration-200 cursor-pointer;
+}
+
+.product-card:hover {
+  @apply shadow-lg scale-[1.02];
+}
+
+/* Cart item animation */
+.cart-item {
+  @apply transition-all duration-200;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
+}
+
+/* Promo badge - square with rounded corners */
+.promo-badge {
+  @apply inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium border-2 cursor-pointer transition-all;
+}
+
+.promo-badge:hover {
+  @apply shadow-md;
+}
+
+.promo-badge.active {
+  @apply bg-orange-500 border-orange-500 text-white;
+}

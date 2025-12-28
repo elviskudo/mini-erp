@@ -15,6 +15,7 @@ class UserRole(str, Enum):
     FINANCE = "FINANCE"
     HR = "HR"
     LAB_TECH = "LAB_TECH"
+    CASHIER = "CASHIER"
 
 class UserBase(BaseModel):
     username: str = Field(

@@ -138,6 +138,59 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+
+# JSON-based login for POS and other frontends
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: dict
+
+@router.post("/login", response_model=LoginResponse)
+async def login(request: LoginRequest, db: AsyncSession = Depends(database.get_db)):
+    """JSON-based login endpoint for frontend apps"""
+    user = await auth.authenticate_user(db, request.username, request.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password"
+        )
+    
+    # Check if email is verified
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please verify your email first."
+        )
+    
+    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth.create_access_token(
+        data={
+            "sub": user.username,
+            "username": user.username,
+            "role": user.role.value if user.role else "STAFF",
+            "tenant_id": str(user.tenant_id) if user.tenant_id else None
+        }, 
+        expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user.id),
+            "username": user.username,
+            "email": user.email,
+            "role": user.role.value if user.role else "STAFF",
+            "tenant_id": str(user.tenant_id) if user.tenant_id else None
+        }
+    }
+
+
 @router.get("/me", response_model=schemas.UserResponse)
 async def read_users_me(current_user: schemas.UserResponse = Depends(auth.get_current_user)):
     return current_user
+

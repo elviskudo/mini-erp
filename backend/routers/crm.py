@@ -20,6 +20,7 @@ from models.models_crm import (
     Note, Quotation, QuotationItem,
     SalesOrder, SOItem, SOStatus
 )
+from models.models_pos import Promo, PromoType
 from auth import get_current_user
 
 router = APIRouter(
@@ -1157,3 +1158,202 @@ async def confirm_order(
     
     return {"message": "Order confirmed", "id": str(order_id)}
 
+
+# ==================== PROMOS ====================
+
+class PromoCreate(BaseModel):
+    code: str
+    name: str
+    description: Optional[str] = None
+    promo_type: str = "PERCENTAGE"
+    value: float = 0
+    min_order: float = 0
+    max_discount: Optional[float] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    is_active: bool = True
+    usage_limit: Optional[int] = None
+    per_customer_limit: int = 1
+
+
+class PromoResponse(BaseModel):
+    id: UUID
+    code: str
+    name: str
+    description: Optional[str] = None
+    promo_type: str
+    value: float
+    min_order: float = 0
+    max_discount: Optional[float] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    is_active: bool = True
+    usage_limit: Optional[int] = None
+    usage_count: int = 0
+    per_customer_limit: int = 1
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/promos", response_model=List[PromoResponse])
+async def list_promos(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all promos"""
+    result = await db.execute(
+        select(Promo).where(
+            Promo.tenant_id == current_user.tenant_id
+        ).order_by(Promo.created_at.desc())
+    )
+    promos = result.scalars().all()
+    return [
+        PromoResponse(
+            id=p.id,
+            code=p.code,
+            name=p.name,
+            description=p.description,
+            promo_type=p.promo_type.value if p.promo_type else "PERCENTAGE",
+            value=p.value,
+            min_order=p.min_order or 0,
+            max_discount=p.max_discount,
+            start_date=p.start_date,
+            end_date=p.end_date,
+            is_active=p.is_active,
+            usage_limit=p.usage_limit,
+            usage_count=p.usage_count or 0,
+            per_customer_limit=p.per_customer_limit or 1
+        ) for p in promos
+    ]
+
+
+@router.post("/promos", response_model=PromoResponse)
+async def create_promo(
+    payload: PromoCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create new promo"""
+    try:
+        promo_type = PromoType[payload.promo_type.upper()]
+    except KeyError:
+        promo_type = PromoType.PERCENTAGE
+    
+    promo = Promo(
+        id=uuid_module.uuid4(),
+        tenant_id=current_user.tenant_id,
+        code=payload.code.upper(),
+        name=payload.name,
+        description=payload.description,
+        promo_type=promo_type,
+        value=payload.value,
+        min_order=payload.min_order,
+        max_discount=payload.max_discount,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        is_active=payload.is_active,
+        usage_limit=payload.usage_limit,
+        per_customer_limit=payload.per_customer_limit,
+        created_by=current_user.id
+    )
+    db.add(promo)
+    await db.commit()
+    await db.refresh(promo)
+    
+    return PromoResponse(
+        id=promo.id,
+        code=promo.code,
+        name=promo.name,
+        description=promo.description,
+        promo_type=promo.promo_type.value,
+        value=promo.value,
+        min_order=promo.min_order or 0,
+        max_discount=promo.max_discount,
+        start_date=promo.start_date,
+        end_date=promo.end_date,
+        is_active=promo.is_active,
+        usage_limit=promo.usage_limit,
+        usage_count=promo.usage_count or 0,
+        per_customer_limit=promo.per_customer_limit or 1
+    )
+
+
+@router.put("/promos/{promo_id}", response_model=PromoResponse)
+async def update_promo(
+    promo_id: UUID,
+    payload: PromoCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update promo"""
+    result = await db.execute(
+        select(Promo).where(
+            Promo.id == promo_id,
+            Promo.tenant_id == current_user.tenant_id
+        )
+    )
+    promo = result.scalar_one_or_none()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promo not found")
+    
+    try:
+        promo_type = PromoType[payload.promo_type.upper()]
+    except KeyError:
+        promo_type = PromoType.PERCENTAGE
+    
+    promo.code = payload.code.upper()
+    promo.name = payload.name
+    promo.description = payload.description
+    promo.promo_type = promo_type
+    promo.value = payload.value
+    promo.min_order = payload.min_order
+    promo.max_discount = payload.max_discount
+    promo.start_date = payload.start_date
+    promo.end_date = payload.end_date
+    promo.is_active = payload.is_active
+    promo.usage_limit = payload.usage_limit
+    promo.per_customer_limit = payload.per_customer_limit
+    
+    await db.commit()
+    await db.refresh(promo)
+    
+    return PromoResponse(
+        id=promo.id,
+        code=promo.code,
+        name=promo.name,
+        description=promo.description,
+        promo_type=promo.promo_type.value,
+        value=promo.value,
+        min_order=promo.min_order or 0,
+        max_discount=promo.max_discount,
+        start_date=promo.start_date,
+        end_date=promo.end_date,
+        is_active=promo.is_active,
+        usage_limit=promo.usage_limit,
+        usage_count=promo.usage_count or 0,
+        per_customer_limit=promo.per_customer_limit or 1
+    )
+
+
+@router.delete("/promos/{promo_id}")
+async def delete_promo(
+    promo_id: UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete promo"""
+    result = await db.execute(
+        select(Promo).where(
+            Promo.id == promo_id,
+            Promo.tenant_id == current_user.tenant_id
+        )
+    )
+    promo = result.scalar_one_or_none()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promo not found")
+    
+    await db.delete(promo)
+    await db.commit()
+    
+    return {"message": "Promo deleted", "id": str(promo_id)}

@@ -6,6 +6,12 @@
         <p class="text-gray-500">Customer database and contacts</p>
       </div>
       <div class="flex gap-2">
+        <UDropdown :items="exportItems">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" color="gray">
+            Export
+            <UIcon name="i-heroicons-chevron-down" class="w-4 h-4 ml-1" />
+          </UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchData">Refresh</UButton>
         <UButton icon="i-heroicons-plus" @click="openCreate">Add Customer</UButton>
       </div>
@@ -163,6 +169,17 @@
               </span>
             </div>
           </div>
+
+          <!-- Top-up Section -->
+          <div class="border-t pt-4">
+            <p class="font-medium mb-2">Add Credit (Top-up)</p>
+            <div class="flex gap-2">
+              <UInput v-model.number="topupAmount" type="number" min="0" step="10" placeholder="Amount" class="flex-1" />
+              <UButton color="green" icon="i-heroicons-plus" :loading="topupLoading" @click="topupCredit">
+                Top-up
+              </UButton>
+            </div>
+          </div>
         </div>
         
         <template #footer>
@@ -189,6 +206,8 @@ const isEditing = ref(false)
 const editingId = ref<string | null>(null)
 const showView = ref(false)
 const selectedCustomer = ref<any>(null)
+const topupAmount = ref(0)
+const topupLoading = ref(false)
 
 const customers = ref<any[]>([])
 
@@ -210,9 +229,9 @@ const form = reactive({
   current_balance: 0
 })
 
-const totalBalance = computed(() => customers.value.reduce((sum, c) => sum + (c.current_balance || 0), 0))
-const totalCreditLimit = computed(() => customers.value.reduce((sum, c) => sum + (c.credit_limit || 0), 0))
-const overdueCustomers = computed(() => customers.value.filter(c => c.credit_limit > 0 && c.current_balance > c.credit_limit * 0.8).length)
+const totalBalance = computed(() => customers.value.reduce((sum: number, c: any) => sum + (c.current_balance || 0), 0))
+const totalCreditLimit = computed(() => customers.value.reduce((sum: number, c: any) => sum + (c.credit_limit || 0), 0))
+const overdueCustomers = computed(() => customers.value.filter((c: any) => c.credit_limit > 0 && c.current_balance > c.credit_limit * 0.8).length)
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0)
 
@@ -221,6 +240,125 @@ const getUtilizationColor = (percent: number) => {
   if (percent >= 70) return 'bg-yellow-500'
   return 'bg-green-500'
 }
+
+// Export functions
+const exportItems = [
+  [{
+    label: 'Export as CSV',
+    icon: 'i-heroicons-document-text',
+    click: () => exportCSV()
+  }],
+  [{
+    label: 'Export as Excel',
+    icon: 'i-heroicons-table-cells',
+    click: () => exportXLS()
+  }],
+  [{
+    label: 'Export as PDF',
+    icon: 'i-heroicons-document',
+    click: () => exportPDF()
+  }]
+]
+
+const exportCSV = () => {
+  const headers = ['Name', 'Email', 'Phone', 'Address', 'Credit Limit', 'Balance']
+  const rows = customers.value.map(c => [
+    c.name || '',
+    c.email || '',
+    c.phone || '',
+    (c.address || '').replace(/,/g, ' '),
+    c.credit_limit || 0,
+    c.current_balance || 0
+  ])
+  
+  const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+  downloadFile(csvContent, 'customers.csv', 'text/csv')
+  toast.add({ title: 'Exported', description: 'CSV file downloaded', color: 'green' })
+}
+
+const exportXLS = () => {
+  // Simple HTML table that Excel can open
+  let html = '<table border="1"><thead><tr>'
+  html += '<th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Credit Limit</th><th>Balance</th>'
+  html += '</tr></thead><tbody>'
+  
+  customers.value.forEach(c => {
+    html += `<tr><td>${c.name || ''}</td><td>${c.email || ''}</td><td>${c.phone || ''}</td>`
+    html += `<td>${c.address || ''}</td><td>${c.credit_limit || 0}</td><td>${c.current_balance || 0}</td></tr>`
+  })
+  html += '</tbody></table>'
+  
+  downloadFile(html, 'customers.xls', 'application/vnd.ms-excel')
+  toast.add({ title: 'Exported', description: 'Excel file downloaded', color: 'green' })
+}
+
+const exportPDF = () => {
+  // Create a simple printable HTML document
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    toast.add({ title: 'Error', description: 'Pop-up blocked. Please allow pop-ups.', color: 'red' })
+    return
+  }
+  
+  let html = `<!DOCTYPE html><html><head><title>Customers Export</title>
+    <style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5}</style></head><body>
+    <h1>Customers List</h1><p>Exported: ${new Date().toLocaleDateString()}</p>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Credit Limit</th><th>Balance</th></tr></thead><tbody>`
+  
+  customers.value.forEach(c => {
+    html += `<tr><td>${c.name || ''}</td><td>${c.email || ''}</td><td>${c.phone || ''}</td>`
+    html += `<td>${formatCurrency(c.credit_limit)}</td><td>${formatCurrency(c.current_balance)}</td></tr>`
+  })
+  html += '</tbody></table></body></html>'
+  
+  printWindow.document.write(html)
+  printWindow.document.close()
+  printWindow.print()
+  toast.add({ title: 'Exported', description: 'PDF print dialog opened', color: 'green' })
+}
+
+const downloadFile = (content: string, filename: string, mimeType: string) => {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const topupCredit = async () => {
+  if (!selectedCustomer.value || topupAmount.value <= 0) {
+    toast.add({ title: 'Error', description: 'Please enter a valid amount', color: 'red' })
+    return
+  }
+  
+  topupLoading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('amount', topupAmount.value.toString())
+    
+    const res = await $api.post(`/pos/customer/${selectedCustomer.value.id}/topup`, formData)
+    
+    // Update local state
+    selectedCustomer.value.current_balance = res.data.new_balance
+    
+    // Update in list
+    const idx = customers.value.findIndex((c: any) => c.id === selectedCustomer.value.id)
+    if (idx >= 0) {
+      customers.value[idx].current_balance = res.data.new_balance
+    }
+    
+    toast.add({ title: 'Success', description: `Added ${formatCurrency(topupAmount.value)} credit`, color: 'green' })
+    topupAmount.value = 0
+  } catch (e: any) {
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to top-up', color: 'red' })
+  } finally {
+    topupLoading.value = false
+  }
+}
+
 
 const fetchData = async () => {
   loading.value = true

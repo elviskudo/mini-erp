@@ -5,7 +5,8 @@ from routers import (
     auth, manufacturing, iot, mrp, qc, inventory, 
     procurement, receiving, issuance, opname, delivery, logistics,
     finance, hr, crm, projects, maintenance, ecommerce, compliance,
-    ap, ar, subscription, upload, tenants, saas, menu, users, dashboard, export, settings
+    ap, ar, subscription, upload, tenants, saas, menu, users, dashboard, export, settings,
+    pos
 )
 from middleware import AuditMiddleware
 from connections.mongodb import connect_to_mongo, close_mongo_connection
@@ -66,6 +67,7 @@ app.include_router(users.router)
 app.include_router(dashboard.router)
 app.include_router(export.router)
 app.include_router(settings.router)
+app.include_router(pos.router)
 
 @app.get("/")
 def read_root():

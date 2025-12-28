@@ -17,6 +17,7 @@ class UserRole(str, enum.Enum):
     FINANCE = "FINANCE"
     HR = "HR"
     LAB_TECH = "LAB_TECH"
+    CASHIER = "CASHIER"
 
 
 class User(Base):

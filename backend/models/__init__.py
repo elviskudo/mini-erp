@@ -19,5 +19,7 @@ from .models_crm import *
 from .models_projects import *
 from .models_maintenance import *
 from .models_qms import *
+from .models_pos import *
 from .models_saas import Tenant, TenantMember, MemberRole, SubscriptionTier
 from .models_menu import Menu, RoleMenuPermission
+

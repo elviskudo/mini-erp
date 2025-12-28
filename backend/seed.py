@@ -238,6 +238,7 @@ async def seed_menus(db):
         {"code": "crm.activities", "label": "Activities", "path": "/crm/activities", "parent_code": "crm", "sort_order": 4},
         {"code": "crm.pipeline", "label": "Pipeline", "path": "/crm/pipeline", "parent_code": "crm", "sort_order": 5},
         {"code": "crm.orders", "label": "Sales Orders", "path": "/crm/orders", "parent_code": "crm", "sort_order": 6},
+        {"code": "crm.promos", "label": "Promo Management", "path": "/crm/promos", "parent_code": "crm", "sort_order": 7},
         # Projects children
         {"code": "projects.all", "label": "All Projects", "path": "/projects", "parent_code": "projects", "sort_order": 1},
         # Maintenance children

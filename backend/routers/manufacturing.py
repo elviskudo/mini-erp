@@ -1,16 +1,130 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import selectinload
+from pydantic import BaseModel
+from uuid import UUID
+from datetime import datetime
+import uuid as uuid_module
 import database, models
 import schemas
+from models.models_manufacturing import Category, Product
 from auth import get_current_user
 
 router = APIRouter(
     prefix="/manufacturing",
     tags=["Manufacturing"]
 )
+
+
+# ==================== CATEGORY SCHEMAS ====================
+
+class CategoryCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+    is_active: bool = True
+
+class CategoryResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+    is_active: bool = True
+    
+    class Config:
+        from_attributes = True
+
+
+# ==================== CATEGORY ENDPOINTS ====================
+
+@router.get("/categories", response_model=List[CategoryResponse])
+async def list_categories(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all categories for the tenant"""
+    result = await db.execute(
+        select(Category).where(
+            Category.tenant_id == current_user.tenant_id
+        ).order_by(Category.name)
+    )
+    return result.scalars().all()
+
+
+@router.post("/categories", response_model=CategoryResponse)
+async def create_category(
+    payload: CategoryCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a new category"""
+    category = Category(
+        id=uuid_module.uuid4(),
+        tenant_id=current_user.tenant_id,
+        name=payload.name,
+        description=payload.description,
+        image_url=payload.image_url,
+        is_active=payload.is_active,
+        created_at=datetime.utcnow()
+    )
+    db.add(category)
+    await db.commit()
+    await db.refresh(category)
+    return category
+
+
+@router.put("/categories/{category_id}", response_model=CategoryResponse)
+async def update_category(
+    category_id: UUID,
+    payload: CategoryCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update a category"""
+    result = await db.execute(
+        select(Category).where(
+            Category.id == category_id,
+            Category.tenant_id == current_user.tenant_id
+        )
+    )
+    category = result.scalar_one_or_none()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    category.name = payload.name
+    category.description = payload.description
+    category.image_url = payload.image_url
+    category.is_active = payload.is_active
+    category.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(category)
+    return category
+
+
+@router.delete("/categories/{category_id}")
+async def delete_category(
+    category_id: UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete a category"""
+    result = await db.execute(
+        select(Category).where(
+            Category.id == category_id,
+            Category.tenant_id == current_user.tenant_id
+        )
+    )
+    category = result.scalar_one_or_none()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    await db.delete(category)
+    await db.commit()
+    return {"message": "Category deleted", "id": str(category_id)}
+
 
 # Work Center Endpoints
 @router.post("/work-centers", response_model=schemas.WorkCenterResponse)

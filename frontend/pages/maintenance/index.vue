@@ -1,192 +1,188 @@
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold text-gray-900">Maintenance & Calibration (CMMS)</h2>
-      <UButton icon="i-heroicons-plus" color="black" @click="isOpen = true">New Order</UButton>
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-bold">Maintenance Dashboard</h2>
+        <p class="text-gray-500">Overview of asset maintenance and work orders</p>
+      </div>
+      <div class="flex gap-2">
+        <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchStats">Refresh</UButton>
+        <UButton icon="i-heroicons-plus" @click="navigateTo('/maintenance/work-orders')">New Work Order</UButton>
+      </div>
     </div>
 
-    <div v-if="loading" class="text-center py-4">Loading orders...</div>
-    <UCard v-else>
-         <UTable :columns="columns" :rows="orders">
-            <template #status-data="{ row }">
-                <UBadge :color="getStatusColor(row.status)" variant="soft">{{ row.status }}</UBadge>
-            </template>
-            <template #type-data="{ row }">
-                <UBadge :color="row.type === 'CALIBRATION' ? 'purple' : 'blue'" variant="outline">{{ row.type }}</UBadge>
-            </template>
-            <template #scheduled_date-data="{ row }">
-                {{ new Date(row.scheduled_date).toLocaleDateString() }}
-            </template>
-             <template #actions-data="{ row }">
-                <UButton v-if="row.status !== 'COMPLETED'" size="xs" color="green" variant="ghost" icon="i-heroicons-check" @click="openCompleteModal(row)">Complete</UButton>
-            </template>
-       </UTable>
-    </UCard>
-
-    <!-- Create Order Modal -->
-    <UModal v-model="isOpen">
-      <div class="p-4">
-        <h3 class="text-lg font-bold mb-4">Schedule Maintenance</h3>
-        <UForm :state="form" class="space-y-4" @submit="onSubmit">
-            <UFormGroup label="Asset" name="asset_id" required hint="Select equipment for maintenance" :ui="{ hint: 'text-xs text-gray-400' }">
-                 <USelectMenu v-model="form.asset_id" 
-                              :options="assets" 
-                              option-attribute="name"
-                              value-attribute="id"
-                              placeholder="Search and select asset..."
-                              searchable />
-            </UFormGroup>
-             <UFormGroup label="Type" name="type" required hint="Maintenance category" :ui="{ hint: 'text-xs text-gray-400' }">
-                <USelect v-model="form.type" :options="['PREVENTIVE', 'CALIBRATION', 'CORRECTIVE']" />
-            </UFormGroup>
-            <UFormGroup label="Scheduled Date" name="scheduled_date" required hint="When maintenance is planned" :ui="{ hint: 'text-xs text-gray-400' }">
-                 <UInput v-model="form.scheduled_date" type="date" />
-            </UFormGroup>
-            <UFormGroup label="Description" name="description" hint="Details about the maintenance work" :ui="{ hint: 'text-xs text-gray-400' }">
-                <UTextarea v-model="form.description" placeholder="Describe the maintenance task..." rows="3" />
-            </UFormGroup>
-             <UFormGroup label="Technician" name="technician" hint="Assigned personnel" :ui="{ hint: 'text-xs text-gray-400' }">
-                <UInput v-model="form.technician" placeholder="e.g. John Smith" />
-            </UFormGroup>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <UButton color="gray" variant="ghost" @click="isOpen = false">Cancel</UButton>
-                <UButton type="submit" color="black" :loading="saving" :disabled="!form.asset_id || !form.scheduled_date">Create Order</UButton>
-            </div>
-        </UForm>
-      </div>
-    </UModal>
-
-    <!-- Complete Order Modal -->
-    <UModal v-model="isCompleteOpen">
-        <div class="p-4">
-             <h3 class="text-lg font-bold mb-4">Complete Order</h3>
-             <UForm :state="completeForm" class="space-y-4" @submit="submitCompletion">
-                <UFormGroup label="Notes / Findings" name="notes">
-                    <UTextarea v-model="completeForm.notes" />
-                </UFormGroup>
-                
-                <div v-if="selectedOrder?.type === 'CALIBRATION'" class="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm mb-4">
-                     <span class="font-bold">Calibration Check:</span> Completing this order will update the Asset status to <span class="text-green-600 font-bold">VALID</span>.
-                </div>
-
-                <UFormGroup v-if="selectedOrder?.type === 'CALIBRATION'" label="Next Calibration Date" name="next_calibration_date" required>
-                     <UInput v-model="completeForm.next_calibration_date" type="date" />
-                </UFormGroup>
-
-                <div class="flex justify-end gap-2 mt-6">
-                    <UButton color="gray" variant="ghost" @click="isCompleteOpen = false">Cancel</UButton>
-                    <UButton type="submit" color="green" :loading="saving">Complete & Certify</UButton>
-                </div>
-             </UForm>
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold">{{ stats.total_assets }}</p>
+          <p class="text-sm text-gray-500">Total Assets</p>
         </div>
-    </UModal>
+      </UCard>
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-green-600">{{ stats.operational_assets }}</p>
+          <p class="text-sm text-gray-500">Operational</p>
+        </div>
+      </UCard>
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-orange-600">{{ stats.under_maintenance }}</p>
+          <p class="text-sm text-gray-500">Under Maintenance</p>
+        </div>
+      </UCard>
+      <UCard :ui="{ body: { padding: 'p-4' } }">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-red-600">{{ stats.broken_assets }}</p>
+          <p class="text-sm text-gray-500">Broken</p>
+        </div>
+      </UCard>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <!-- Work Order Stats -->
+      <UCard>
+        <template #header>
+          <h3 class="font-semibold">Work Orders</h3>
+        </template>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="text-center p-4 bg-gray-50 rounded-lg">
+            <p class="text-2xl font-bold text-blue-600">{{ stats.pending_work_orders }}</p>
+            <p class="text-sm text-gray-500">Pending</p>
+          </div>
+          <div class="text-center p-4 bg-gray-50 rounded-lg">
+            <p class="text-2xl font-bold text-yellow-600">{{ stats.in_progress_work_orders }}</p>
+            <p class="text-sm text-gray-500">In Progress</p>
+          </div>
+          <div class="text-center p-4 bg-gray-50 rounded-lg">
+            <p class="text-2xl font-bold text-green-600">{{ stats.completed_this_month }}</p>
+            <p class="text-sm text-gray-500">Completed (This Month)</p>
+          </div>
+          <div class="text-center p-4 bg-gray-50 rounded-lg">
+            <p class="text-2xl font-bold text-purple-600">{{ formatCurrency(stats.total_costs_this_month) }}</p>
+            <p class="text-sm text-gray-500">Costs (This Month)</p>
+          </div>
+        </div>
+      </UCard>
+
+      <!-- Schedule Stats -->
+      <UCard>
+        <template #header>
+          <h3 class="font-semibold">Maintenance Schedules</h3>
+        </template>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="text-center p-4 bg-red-50 rounded-lg">
+            <p class="text-2xl font-bold text-red-600">{{ stats.overdue_schedules }}</p>
+            <p class="text-sm text-gray-500">Overdue</p>
+          </div>
+          <div class="text-center p-4 bg-blue-50 rounded-lg">
+            <p class="text-2xl font-bold text-blue-600">{{ stats.upcoming_schedules }}</p>
+            <p class="text-sm text-gray-500">Upcoming</p>
+          </div>
+        </div>
+        <div class="mt-4 flex gap-2">
+          <UButton block color="gray" variant="outline" @click="navigateTo('/maintenance/schedules')">View Schedules</UButton>
+        </div>
+      </UCard>
+    </div>
+
+    <!-- Recent Work Orders -->
+    <UCard>
+      <template #header>
+        <div class="flex justify-between items-center">
+          <h3 class="font-semibold">Recent Work Orders</h3>
+          <UButton size="xs" variant="ghost" @click="navigateTo('/maintenance/work-orders')">View All</UButton>
+        </div>
+      </template>
+      <div v-if="loading" class="flex justify-center py-8">
+        <UIcon name="i-heroicons-arrow-path" class="w-6 h-6 animate-spin" />
+      </div>
+      <div v-else-if="recentWorkOrders.length === 0" class="text-center py-8 text-gray-500">
+        No work orders yet
+      </div>
+      <div v-else class="space-y-3">
+        <div v-for="wo in recentWorkOrders" :key="wo.id" class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer" @click="navigateTo(`/maintenance/work-orders?id=${wo.id}`)">
+          <div class="flex items-center gap-3">
+            <UBadge :color="getStatusColor(wo.status)" variant="subtle" size="sm">{{ wo.status }}</UBadge>
+            <div>
+              <p class="font-medium">{{ wo.title }}</p>
+              <p class="text-sm text-gray-500">{{ wo.code }} • {{ wo.asset_name }}</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <UBadge :color="getPriorityColor(wo.priority)" variant="outline" size="xs">{{ wo.priority }}</UBadge>
+            <p class="text-xs text-gray-400 mt-1">{{ formatDate(wo.created_at) }}</p>
+          </div>
+        </div>
+      </div>
+    </UCard>
   </div>
 </template>
 
 <script setup lang="ts">
 const { $api } = useNuxtApp()
-const toast = useToast()
 
-const loading = ref(false)
-const saving = ref(false)
-const isOpen = ref(false)
-const isCompleteOpen = ref(false)
-const orders = ref([])
-const assets = ref([])
-const selectedOrder = ref(null)
+definePageMeta({ layout: 'default' })
 
-const columns = [
-  { key: 'scheduled_date', label: 'Date' },
-  { key: 'asset_id', label: 'Asset ID' }, // Ideally fetch Name
-  { key: 'type', label: 'Type' },
-  { key: 'description', label: 'Description' },
-  { key: 'status', label: 'Status' },
-  { key: 'actions', label: 'Actions' }
-]
-
-const form = reactive({
-    asset_id: null,
-    type: 'PREVENTIVE',
-    scheduled_date: '',
-    description: '',
-    technician: ''
+const loading = ref(true)
+const stats = ref<any>({
+  total_assets: 0,
+  operational_assets: 0,
+  under_maintenance: 0,
+  broken_assets: 0,
+  total_work_orders: 0,
+  pending_work_orders: 0,
+  in_progress_work_orders: 0,
+  completed_this_month: 0,
+  overdue_schedules: 0,
+  upcoming_schedules: 0,
+  total_costs_this_month: 0
 })
+const recentWorkOrders = ref<any[]>([])
 
-const completeForm = reactive({
-    notes: '',
-    next_calibration_date: ''
-})
-
-const fetchOrders = async () => {
-    loading.value = true
-    try {
-        const res = await $api.get('/maintenance/orders')
-        orders.value = res.data
-    } catch (e) {
-        console.error(e)
-    } finally {
-        loading.value = false
-    }
+const fetchStats = async () => {
+  loading.value = true
+  try {
+    const [statsRes, woRes] = await Promise.all([
+      $api.get('/maintenance/stats'),
+      $api.get('/maintenance/work-orders')
+    ])
+    stats.value = statsRes.data
+    recentWorkOrders.value = woRes.data.slice(0, 5)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
 }
 
-const fetchAssets = async () => {
-    try {
-        const res = await $api.get('/finance/assets')
-        assets.value = res.data
-    } catch (e) {
-        console.error(e)
-    }
+const formatCurrency = (value: number) => {
+  if (!value) return 'Rp 0'
+  if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(1)}M`
+  if (value >= 1000) return `Rp ${(value / 1000).toFixed(0)}k`
+  return `Rp ${value}`
 }
 
-const onSubmit = async () => {
-    saving.value = true
-    try {
-        await $api.post('/maintenance/orders', form)
-        toast.add({ title: 'Success', description: 'Maintenance scheduled.' })
-        isOpen.value = false
-        fetchOrders()
-    } catch (e) {
-        toast.add({ title: 'Error', description: 'Failed to create order.' })
-    } finally {
-        saving.value = false
-    }
-}
-
-const openCompleteModal = (order) => {
-    selectedOrder.value = order
-    completeForm.notes = ''
-    completeForm.next_calibration_date = ''
-    isCompleteOpen.value = true
-}
-
-const submitCompletion = async () => {
-    if (!selectedOrder.value) return
-    saving.value = true
-    try {
-        await $api.post(`/maintenance/orders/${selectedOrder.value.id}/complete`, completeForm)
-        toast.add({ title: 'Success', description: 'Order completed.' })
-        isCompleteOpen.value = false
-        fetchOrders()
-    } catch (e) {
-         toast.add({ title: 'Error', description: 'Failed to complete order.' })
-    } finally {
-        saving.value = false
-    }
+const formatDate = (date: string) => {
+  if (!date) return '-'
+  return new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
 }
 
 const getStatusColor = (status: string) => {
-    switch (status) {
-        case 'OPEN': return 'gray'
-        case 'IN_PROGRESS': return 'orange'
-        case 'COMPLETED': return 'green'
-        case 'CANCELLED': return 'red'
-        default: return 'gray'
-    }
+  const colors: Record<string, string> = {
+    DRAFT: 'gray', SCHEDULED: 'blue', IN_PROGRESS: 'yellow', COMPLETED: 'green', CANCELLED: 'red'
+  }
+  return colors[status] || 'gray'
+}
+
+const getPriorityColor = (priority: string) => {
+  const colors: Record<string, string> = {
+    LOW: 'gray', MEDIUM: 'blue', HIGH: 'orange', URGENT: 'red'
+  }
+  return colors[priority] || 'gray'
 }
 
 onMounted(() => {
-    fetchOrders()
-    fetchAssets()
+  fetchStats()
 })
 </script>

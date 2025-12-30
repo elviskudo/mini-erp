@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base
 from routers import (
@@ -34,6 +35,15 @@ async def lifespan(app: FastAPI):
     # Cancel worker? worker_task.cancel()
 
 app = FastAPI(title="Mini ERP API", version="1.0.0", lifespan=lifespan)
+
+# CORS middleware for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.add_middleware(AuditMiddleware)
 

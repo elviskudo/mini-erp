@@ -1,18 +1,16 @@
-FROM node:22-alpine
+FROM oven/bun:1-alpine
 
 WORKDIR /app
 
-COPY package.json .
+COPY package.json bun.lockb* ./
 
-RUN npm install
+RUN bun install
 
 COPY . .
-
-# RUN npm run build
 
 ENV HOST=0.0.0.0
 ENV PORT=3000
 
 EXPOSE 3000
 
-CMD ["node", ".output/server/index.mjs"]
+CMD ["bun", "run", "dev"]

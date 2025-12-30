@@ -19,9 +19,53 @@
       </div>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="text-center py-12">
-      <UIcon name="i-heroicons-arrow-path" class="w-8 h-8 animate-spin text-gray-400" />
+    <!-- Shimmer Loading Skeleton -->
+    <div v-if="loading" class="space-y-6">
+      <!-- Stats Shimmer -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div v-for="i in 5" :key="i" class="bg-white rounded-lg p-4 border">
+          <div class="flex flex-col items-center gap-2">
+            <div class="h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
+            <div class="h-4 w-12 bg-gray-100 rounded animate-pulse"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Main Content Shimmer -->
+      <div class="bg-white rounded-lg p-6 border">
+        <!-- Tabs shimmer -->
+        <div class="flex gap-4 mb-6">
+          <div v-for="i in 4" :key="i" class="h-8 w-20 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+        <!-- Content shimmer -->
+        <div class="grid md:grid-cols-3 gap-6">
+          <div class="md:col-span-2 space-y-4">
+            <div class="h-6 w-1/3 bg-gray-200 rounded animate-pulse"></div>
+            <div class="space-y-2">
+              <div class="h-4 w-full bg-gray-100 rounded animate-pulse"></div>
+              <div class="h-4 w-3/4 bg-gray-100 rounded animate-pulse"></div>
+              <div class="h-4 w-1/2 bg-gray-100 rounded animate-pulse"></div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div v-for="i in 6" :key="i">
+                <div class="h-4 w-16 bg-gray-100 rounded animate-pulse mb-1"></div>
+                <div class="h-5 w-24 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="h-6 w-1/2 bg-gray-200 rounded animate-pulse mb-4"></div>
+            <div class="space-y-3">
+              <div v-for="i in 3" :key="i" class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                <div class="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+                <div class="space-y-1">
+                  <div class="h-4 w-20 bg-gray-200 rounded animate-pulse"></div>
+                  <div class="h-3 w-12 bg-gray-100 rounded animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <template v-else-if="project">
@@ -403,7 +447,7 @@ const { $api } = useNuxtApp()
 
 definePageMeta({ layout: 'default' })
 
-const projectId = route.params.id as string
+const projectId = computed(() => route.params.id as string)
 
 const loading = ref(true)
 const saving = ref(false)
@@ -507,11 +551,17 @@ const onDrop = async (e: DragEvent, newStatus: string) => {
 }
 
 const fetchAll = async () => {
+  // Guard against undefined projectId during SSR
+  if (!projectId.value) {
+    console.warn('projectId is undefined, skipping fetch')
+    return
+  }
   loading.value = true
   try {
+    const pid = projectId.value
     const [projectRes, statsRes, tasksRes, membersRes, timeRes, expensesRes, usersRes] = await Promise.all([
-      $api.get(`/projects/${projectId}`), $api.get(`/projects/${projectId}/stats`), $api.get(`/projects/${projectId}/tasks`),
-      $api.get(`/projects/${projectId}/members`), $api.get(`/projects/${projectId}/time-entries`), $api.get(`/projects/${projectId}/expenses`),
+      $api.get(`/projects/${pid}`), $api.get(`/projects/${pid}/stats`), $api.get(`/projects/${pid}/tasks`),
+      $api.get(`/projects/${pid}/members`), $api.get(`/projects/${pid}/time-entries`), $api.get(`/projects/${pid}/expenses`),
       $api.get('/users').catch(() => ({ data: [] }))
     ])
     project.value = projectRes.data; stats.value = statsRes.data; tasks.value = tasksRes.data
@@ -525,8 +575,8 @@ const fetchAll = async () => {
 
 // Member
 const openAddMember = () => { Object.assign(memberForm, { user_id: '', role: 'MEMBER', hourly_rate: 0 }); isMemberSlideoverOpen.value = true }
-const addMember = async () => { if (!memberForm.user_id) return; saving.value = true; try { await $api.post(`/projects/${projectId}/members`, memberForm); isMemberSlideoverOpen.value = false; fetchAll() } catch (e) {} finally { saving.value = false } }
-const removeMember = async (m: any) => { if (confirm('Remove?')) { await $api.delete(`/projects/${projectId}/members/${m.user_id}`); fetchAll() } }
+const addMember = async () => { if (!memberForm.user_id) return; saving.value = true; try { await $api.post(`/projects/${projectId.value}/members`, memberForm); isMemberSlideoverOpen.value = false; fetchAll() } catch (e) {} finally { saving.value = false } }
+const removeMember = async (m: any) => { if (confirm('Remove?')) { await $api.delete(`/projects/${projectId.value}/members/${m.user_id}`); fetchAll() } }
 
 // Task
 const openTaskSlideover = (task: any = null) => {
@@ -541,7 +591,7 @@ const saveTask = async () => {
     const payload = { name: taskForm.name, description: taskForm.description, wbs_code: taskForm.wbs_code, status: taskForm.status, priority: taskForm.priority, estimated_hours: taskForm.estimated_hours }
     let taskId = editingTask.value?.id
     if (editingTask.value) await $api.put(`/projects/tasks/${taskId}`, payload)
-    else { const res = await $api.post(`/projects/${projectId}/tasks`, payload); taskId = res.data.id }
+    else { const res = await $api.post(`/projects/${projectId.value}/tasks`, payload); taskId = res.data.id }
     // Update assignees
     const currentAssignees = getTaskAssignees(taskId).map(a => a.user_id)
     for (const uid of taskForm.assignee_ids) { if (!currentAssignees.includes(uid)) await $api.post(`/projects/tasks/${taskId}/assignees`, { user_id: uid }) }
@@ -690,11 +740,11 @@ const deleteComment = async (commentId: string) => { if (!selectedTask.value) re
 
 // Time
 const openTimeSlideover = () => { Object.assign(timeForm, { date: new Date().toISOString().split('T')[0], hours: 1, task_id: '', description: '' }); isTimeSlideoverOpen.value = true }
-const saveTimeEntry = async () => { if (!timeForm.hours) return; saving.value = true; try { await $api.post(`/projects/${projectId}/time-entries`, { ...timeForm, task_id: timeForm.task_id || null }); isTimeSlideoverOpen.value = false; fetchAll() } catch (e) {} finally { saving.value = false } }
+const saveTimeEntry = async () => { if (!timeForm.hours) return; saving.value = true; try { await $api.post(`/projects/${projectId.value}/time-entries`, { ...timeForm, task_id: timeForm.task_id || null }); isTimeSlideoverOpen.value = false; fetchAll() } catch (e) {} finally { saving.value = false } }
 
 // Expense
 const openExpenseSlideover = () => { Object.assign(expenseForm, { description: '', amount: 0, category: 'OTHER', date: new Date().toISOString().split('T')[0] }); isExpenseSlideoverOpen.value = true }
-const saveExpense = async () => { if (!expenseForm.description || !expenseForm.amount) return; saving.value = true; try { await $api.post(`/projects/${projectId}/expenses`, expenseForm); isExpenseSlideoverOpen.value = false; fetchAll() } catch (e) {} finally { saving.value = false } }
+const saveExpense = async () => { if (!expenseForm.description || !expenseForm.amount) return; saving.value = true; try { await $api.post(`/projects/${projectId.value}/expenses`, expenseForm); isExpenseSlideoverOpen.value = false; fetchAll() } catch (e) {} finally { saving.value = false } }
 
 // Project
 const openEditProject = () => { Object.assign(projectForm, { name: project.value.name, description: project.value.description || '', code: project.value.code, status: project.value.status, priority: project.value.priority, budget: project.value.budget || 0, start_date: project.value.start_date?.split('T')[0] || '', end_date: project.value.end_date?.split('T')[0] || '' }); isEditSlideoverOpen.value = true }
@@ -703,10 +753,10 @@ const saveProject = async () => {
     const payload = { ...projectForm }
     if (payload.start_date) payload.start_date = new Date(payload.start_date).toISOString()
     if (payload.end_date) payload.end_date = new Date(payload.end_date).toISOString()
-    await $api.put(`/projects/${projectId}`, payload); isEditSlideoverOpen.value = false; fetchAll()
+    await $api.put(`/projects/${projectId.value}`, payload); isEditSlideoverOpen.value = false; fetchAll()
   } catch (e) { toast.add({ title: 'Error', color: 'red' }) } finally { saving.value = false }
 }
-const deleteProject = async () => { if (confirm('Delete project?')) { await $api.delete(`/projects/${projectId}`); router.push('/projects') } }
+const deleteProject = async () => { if (confirm('Delete project?')) { await $api.delete(`/projects/${projectId.value}`); router.push('/projects') } }
 
 // Formatters
 const getStatusColor = (s: string) => ({ DRAFT: 'gray', PLANNING: 'blue', IN_PROGRESS: 'orange', ON_HOLD: 'yellow', COMPLETED: 'green', CANCELLED: 'red' }[s] || 'gray')

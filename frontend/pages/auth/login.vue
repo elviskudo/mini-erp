@@ -142,22 +142,19 @@ const handleLogin = async () => {
         formData.append('password', password.value)
 
         // Login to get token
-        const response: any = await $fetch('/api/auth/token', {
-             method: 'POST',
-             body: formData
+        const response: any = await $api.post('/auth/token', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
         })
         
-        authStore.setToken(response.access_token)
+        authStore.setToken(response.data.access_token)
         
         // Fetch user details to get tenant info immediately
         try {
-          const user: any = await $fetch('/api/auth/me', {
-            headers: {
-              'Authorization': `Bearer ${response.access_token}`
-            }
-          })
+          const user: any = await $api.get('/auth/me')
           
-          if (user.tenant_id) {
+          if (user.data.tenant_id) {
              // Fetch tenant details if needed, or just rely on store
              // For now, we rely on the token/user data
           }

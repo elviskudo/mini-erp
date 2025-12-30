@@ -605,14 +605,179 @@ def upgrade() -> None:
             task_id VARCHAR NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
             user_id UUID NOT NULL REFERENCES users(id),
             content TEXT NOT NULL,
+            parent_id UUID REFERENCES task_comments(id),
+            reactions JSON DEFAULT '{}',
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_task_comments_tenant_id ON task_comments(tenant_id)")
 
+    # Create task_attachments table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS task_attachments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            task_id VARCHAR NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id),
+            file_name VARCHAR NOT NULL,
+            file_url VARCHAR NOT NULL,
+            file_type VARCHAR,
+            file_size INTEGER,
+            public_id VARCHAR,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_task_attachments_task_id ON task_attachments(task_id)")
+
+    # ==================== MAINTENANCE MODULE ====================
+
+    # Create assets table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS assets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            category VARCHAR,
+            location VARCHAR,
+            status VARCHAR DEFAULT 'OPERATIONAL',
+            purchase_date DATE,
+            purchase_cost FLOAT DEFAULT 0,
+            serial_number VARCHAR,
+            manufacturer VARCHAR,
+            model VARCHAR,
+            warranty_expiry DATE,
+            notes TEXT,
+            image_url VARCHAR,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_assets_tenant_id ON assets(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_assets_code ON assets(code)")
+
+    # Create maintenance_types table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_types (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            description TEXT,
+            is_scheduled BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_types_tenant_id ON maintenance_types(tenant_id)")
+
+    # Create maintenance_work_orders table (new structure for maintenance)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_work_orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            asset_id UUID REFERENCES assets(id),
+            type_id UUID REFERENCES maintenance_types(id),
+            title VARCHAR NOT NULL,
+            description TEXT,
+            priority VARCHAR DEFAULT 'MEDIUM',
+            status VARCHAR DEFAULT 'DRAFT',
+            scheduled_date TIMESTAMP,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            assigned_to UUID REFERENCES users(id),
+            reported_by UUID REFERENCES users(id),
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_work_orders_tenant_id ON maintenance_work_orders(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_work_orders_code ON maintenance_work_orders(code)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_work_orders_asset_id ON maintenance_work_orders(asset_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_work_orders_status ON maintenance_work_orders(status)")
+
+    # Create maintenance_work_order_tasks table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_work_order_tasks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            work_order_id UUID NOT NULL REFERENCES maintenance_work_orders(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            is_completed BOOLEAN DEFAULT FALSE,
+            completed_at TIMESTAMP,
+            completed_by UUID REFERENCES users(id)
+        )
+    """)
+
+    # Create maintenance_work_order_parts table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_work_order_parts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            work_order_id UUID NOT NULL REFERENCES maintenance_work_orders(id) ON DELETE CASCADE,
+            part_name VARCHAR NOT NULL,
+            part_number VARCHAR,
+            quantity INTEGER DEFAULT 1,
+            unit_cost FLOAT DEFAULT 0,
+            total_cost FLOAT DEFAULT 0
+        )
+    """)
+
+    # Create maintenance_work_order_costs table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_work_order_costs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            work_order_id UUID NOT NULL REFERENCES maintenance_work_orders(id) ON DELETE CASCADE,
+            category VARCHAR DEFAULT 'OTHER',
+            description VARCHAR NOT NULL,
+            amount FLOAT DEFAULT 0,
+            date DATE DEFAULT CURRENT_DATE
+        )
+    """)
+
+    # Create maintenance_schedules table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_schedules (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            asset_id UUID NOT NULL REFERENCES assets(id),
+            type_id UUID REFERENCES maintenance_types(id),
+            title VARCHAR NOT NULL,
+            description TEXT,
+            frequency VARCHAR DEFAULT 'MONTHLY',
+            interval_days INTEGER DEFAULT 30,
+            last_performed DATE,
+            next_due DATE,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_schedules_tenant_id ON maintenance_schedules(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_schedules_asset_id ON maintenance_schedules(asset_id)")
+
 
 def downgrade() -> None:
+    # Drop Maintenance module tables first (reverse order of creation)
+    op.execute("DROP TABLE IF EXISTS maintenance_schedules")
+    op.execute("DROP TABLE IF EXISTS maintenance_work_order_costs")
+    op.execute("DROP TABLE IF EXISTS maintenance_work_order_parts")
+    op.execute("DROP TABLE IF EXISTS maintenance_work_order_tasks")
+    op.execute("DROP TABLE IF EXISTS maintenance_work_orders CASCADE")
+    op.execute("DROP TABLE IF EXISTS maintenance_types")
+    op.execute("DROP TABLE IF EXISTS assets CASCADE")
+    op.execute("DROP TABLE IF EXISTS task_attachments")
+    op.execute("DROP TABLE IF EXISTS task_comments")
+    op.execute("DROP TABLE IF EXISTS task_assignees")
+    
+    # Drop Projects module tables
+    op.execute("DROP TABLE IF EXISTS project_expenses")
+    op.execute("DROP TABLE IF EXISTS time_entries")
+    op.execute("DROP TABLE IF EXISTS project_members")
+    op.execute("DROP TABLE IF EXISTS project_tasks CASCADE")
+    op.execute("DROP TABLE IF EXISTS projects CASCADE")
+    
+    # Drop other tables
     op.execute("DROP TABLE IF EXISTS storage_providers")
     op.execute("DROP TYPE IF EXISTS storagetype")
     op.execute("DROP TABLE IF EXISTS payment_gateways")
@@ -637,3 +802,4 @@ def downgrade() -> None:
     op.execute("DROP TYPE IF EXISTS memberrole")
     op.execute("DROP TYPE IF EXISTS subscriptiontier")
     op.execute("DROP TYPE IF EXISTS userrole")
+

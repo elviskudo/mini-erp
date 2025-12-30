@@ -1,23 +1,18 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
     devtools: { enabled: true },
-    modules: ['@nuxt/ui', '@pinia/nuxt'],
+    modules: ['@nuxt/ui', '@nuxtjs/tailwindcss', '@pinia/nuxt'],
     devServer: {
         host: '0.0.0.0',
-        port: 3000
+        port: Number(process.env.NUXT_PORT) || 80
     },
     vite: {
         server: {
-            allowedHosts: ['frontend-web.mini-erp.orb.local', 'localhost', '.orb.local'],
             hmr: {
                 protocol: 'ws',
-                host: 'localhost',
-                port: 24678,
-                clientPort: 24678
+                host: '0.0.0.0'
             },
-            watch: {
-                usePolling: true
-            }
+            allowedHosts: ['frontend-web.mini-erp.orb.local', 'localhost', '.orb.local']
         }
     },
     colorMode: {
@@ -35,11 +30,6 @@ export default defineNuxtConfig({
     runtimeConfig: {
         public: {
             apiBase: '/api'
-        }
-    },
-    nitro: {
-        routeRules: {
-            '/api/**': { proxy: 'http://backend_api:8000/**' }
         }
     },
     compatibilityDate: '2025-01-01'

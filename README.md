@@ -18,8 +18,35 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 - **Finance** - Chart of accounts, general ledger, fixed assets
 - **HR** - Employees, payroll management
 - **CRM** - Customer management, sales orders
-- **Projects** - Project management, task tracking
-- **Maintenance** - Asset maintenance scheduling
+- **Projects** - Project management, task tracking with Kanban board
+- **Maintenance** - Asset management, work orders, schedules
+- **POS** - Point of Sale system with customer credit, promos, transactions
+
+### 🆕 Recent Updates (December 2025)
+
+#### Frontend Improvements
+- **HTTPS API Proxy** - Custom server middleware proxies `/api/*` to backend, fixing `Transfer-Encoding` header issues
+- **Heroicons Fix** - Excluded `/_nuxt*` paths from proxy to load icons correctly
+- **Shimmer Loading** - Replaced spinners with animated skeleton loading for better UX
+- **Route Params Fix** - Fixed SSR issues with dynamic route parameters using `computed()`
+
+#### Backend Updates
+- **Maintenance Submenu** - Added child menus: Assets, Work Orders, Schedules
+- **Hardcoded Menu Fallback** - Updated `get_hardcoded_menus()` with complete menu structure
+
+#### Technical Notes for Developers
+```typescript
+// Frontend runs with Bun (not npm/yarn)
+docker compose exec frontend_web bun install
+
+// API calls use custom proxy middleware
+// Location: frontend/server/middleware/api-proxy.ts
+// Excludes: /api/_nuxt* (for internal Nuxt routes like icons)
+
+// Dynamic route params in pages should use computed()
+const projectId = computed(() => route.params.id as string)
+// NOT: const projectId = route.params.id (undefined during SSR)
+```
 
 ### 🏢 Multi-Tenancy (SaaS Architecture)
 - **Tenant Isolation** - All data scoped by `tenant_id`
@@ -51,9 +78,18 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 | Component | Technology |
 |-----------|------------|
 | Framework | Nuxt 3 (Vue.js 3) |
+| Runtime | **Bun** (oven/bun:1-alpine) |
 | Styling | TailwindCSS + Nuxt UI (Gumroad-inspired pink theme) |
 | State | Pinia |
 | HTTP Client | Axios |
+
+### Microservices
+| Service | Port | Description |
+|---------|------|-------------|
+| frontend_web | 3333 | Main ERP Frontend (Nuxt 3 + Bun) |
+| pos_app | 3334 | Point of Sale App (Nuxt 3 + npm) |
+| backend_api | 8000 | FastAPI Backend |
+| realtime_server | 3001 | Socket.IO for real-time updates |
 
 ## 🚀 Quick Start
 
@@ -88,7 +124,8 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Frontend | http://localhost:3333 | - |
+| Main Frontend | http://localhost:3333 | - |
+| POS Frontend | http://localhost:3334 | - |
 | Backend API Docs | http://localhost:8000/docs | - |
 | RabbitMQ Console | http://localhost:15672 | guest/guest |
 
@@ -302,6 +339,15 @@ mini-erp/
 │   ├── tailwind.config.js      # TailwindCSS (pink theme)
 │   └── package.json
 │
+├── pos/                        # POS Nuxt Application (Separate)
+│   ├── pages/
+│   │   └── pos.vue             # Main POS interface
+│   ├── components/             # POS-specific components
+│   ├── stores/                 # Pinia stores (cart, auth)
+│   ├── composables/            # Vue composables
+│   ├── Dockerfile              # npm-based container
+│   └── nuxt.config.ts
+│
 ├── realtime/                   # Socket.IO Server (Node.js)
 │   ├── index.js                # WebSocket server with tenant rooms
 │   ├── package.json
@@ -334,8 +380,16 @@ mini-erp/
 | Username | Email | Password | Role |
 |----------|-------|----------|------|
 | admin | admin@minierp.com | admin123 | Admin |
-| operator | operator@minierp.com | operator123 | Operator |
+| manager | manager@minierp.com | manager123 | Manager |
+| production | production@minierp.com | production123 | Production |
+| warehouse | warehouse@minierp.com | warehouse123 | Warehouse |
+| procurement | procurement@minierp.com | procurement123 | Procurement |
+| finance | finance@minierp.com | finance123 | Finance |
+| hr | hr@minierp.com | hr123 | HR |
+| staff | staff@minierp.com | staff123 | Staff |
+| lab_tech | labtech@minierp.com | lab_tech123 | Lab Tech |
 
+> **Password Format**: `{username}123` (e.g., admin → admin123, manager → manager123)
 > Note: Seeded users have `is_verified=true` by default.
 
 ## 📊 Health Check
@@ -627,6 +681,39 @@ Response:
 3. Order Tracking
    └─> View Order Status → Delivery Updates → Invoice Download
 ```
+
+---
+
+### 🛒 Point of Sale (POS)
+
+```
+1. Product Display
+   └─> Browse Products → Filter by Category → View Stock Qty
+
+2. Customer Management
+   └─> Quick Search → Create New → KTP Image Upload → Credit Top-up
+
+3. Transaction Flow
+   └─> Add Items to Cart → Apply Promo → Select Payment → Complete Sale
+
+4. Payment Methods
+   └─> Cash / Credit Card / Customer Credit / QRIS / Transfer
+```
+
+**POS Features:**
+- Multi-tenant isolated transactions
+- Customer credit system with balance tracking
+- Promo/discount code application
+- Product stock validation
+- Transaction history and receipts
+- Cloudinary for KTP image storage
+
+**API Endpoints:** `/pos/*`
+- `GET /pos/products` - Get products for POS display
+- `POST /pos/customers` - Create customer with KTP upload
+- `POST /pos/customers/{id}/topup` - Add credit to customer
+- `POST /pos/transactions` - Create new transaction
+- `GET /pos/transactions` - List transactions
 
 ---
 

@@ -47,4 +47,5 @@ docker-compose.override.yml
 # Project specific
 backend/venv/
 frontend/node_modules/
+pos/node_modules/
 realtime/node_modules/

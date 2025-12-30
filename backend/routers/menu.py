@@ -101,7 +101,11 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Promos", "to": "/crm/promos"}
         ]},
         {"label": "Projects", "icon": "i-heroicons-clipboard-document-list", "to": "/projects"},
-        {"label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "to": "/maintenance"},
+        {"label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "children": [
+            {"label": "Assets", "to": "/maintenance/assets"},
+            {"label": "Work Orders", "to": "/maintenance/work-orders"},
+            {"label": "Schedules", "to": "/maintenance/schedules"}
+        ]},
         {"label": "HR & Payroll", "icon": "i-heroicons-user-group", "children": [
             {"label": "Employees", "to": "/hr/employees"},
             {"label": "Payroll Run", "to": "/hr/payroll"}

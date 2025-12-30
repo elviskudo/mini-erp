@@ -184,7 +184,7 @@ async def seed_menus(db):
         {"code": "logistics", "label": "Logistics", "icon": "i-heroicons-truck", "path": None, "sort_order": 5},
         {"code": "crm", "label": "CRM & Sales", "icon": "i-heroicons-users", "path": None, "sort_order": 6},
         {"code": "projects", "label": "Projects", "icon": "i-heroicons-clipboard-document-list", "path": "/projects", "sort_order": 7},
-        {"code": "maintenance", "label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "path": "/maintenance", "sort_order": 8},
+        {"code": "maintenance", "label": "Maintenance", "icon": "i-heroicons-cog-8-tooth", "path": None, "sort_order": 8},
         {"code": "hr", "label": "HR & Payroll", "icon": "i-heroicons-user-group", "path": None, "sort_order": 9},
         {"code": "finance", "label": "Finance", "icon": "i-heroicons-banknotes", "path": None, "sort_order": 10},
         {"code": "portal", "label": "B2B Portal", "icon": "i-heroicons-building-storefront", "path": "/portal/shop", "sort_order": 11},
@@ -242,7 +242,9 @@ async def seed_menus(db):
         # Projects children
         {"code": "projects.all", "label": "All Projects", "path": "/projects", "parent_code": "projects", "sort_order": 1},
         # Maintenance children
-        {"code": "maintenance.work-orders", "label": "Work Orders", "path": "/maintenance", "parent_code": "maintenance", "sort_order": 1},
+        {"code": "maintenance.assets", "label": "Assets", "path": "/maintenance/assets", "parent_code": "maintenance", "sort_order": 1},
+        {"code": "maintenance.work-orders", "label": "Work Orders", "path": "/maintenance/work-orders", "parent_code": "maintenance", "sort_order": 2},
+        {"code": "maintenance.schedules", "label": "Schedules", "path": "/maintenance/schedules", "parent_code": "maintenance", "sort_order": 3},
         # Portal children
         {"code": "portal.shop", "label": "Browse Catalog", "path": "/portal/shop", "parent_code": "portal", "sort_order": 1},
     ]

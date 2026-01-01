@@ -22,16 +22,38 @@ async def create_warehouse(
     db: AsyncSession = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    data = warehouse.dict()
-    data['tenant_id'] = current_user.tenant_id  # Set tenant_id from current user
+    # Extract floors from payload before creating warehouse
+    floors_data = warehouse.floors
+    data = warehouse.dict(exclude={'floors'})
+    data['tenant_id'] = current_user.tenant_id
+    
     new_wh = models.Warehouse(**data)
     db.add(new_wh)
+    
     try:
+        await db.flush()  # Get warehouse ID before creating floors
+        
+        # Create inline floors if provided
+        if floors_data:
+            for floor_data in floors_data:
+                new_floor = models.Floor(
+                    tenant_id=current_user.tenant_id,
+                    warehouse_id=new_wh.id,
+                    floor_number=floor_data.floor_number,
+                    floor_name=floor_data.floor_name,
+                    area_sqm=floor_data.area_sqm
+                )
+                db.add(new_floor)
+        
         await db.commit()
-        # Re-fetch with selectinload to properly load locations for response
+        
+        # Re-fetch with all relationships
         result = await db.execute(
             select(models.Warehouse)
-            .options(selectinload(models.Warehouse.locations))
+            .options(
+                selectinload(models.Warehouse.locations),
+                selectinload(models.Warehouse.floors).selectinload(models.Floor.rooms)
+            )
             .where(models.Warehouse.id == new_wh.id)
         )
         return result.scalar_one()
@@ -40,17 +62,90 @@ async def create_warehouse(
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/warehouses", response_model=List[schemas.WarehouseResponse])
-async def read_warehouses(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(database.get_db)):
+async def read_warehouses(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     query = select(models.Warehouse)\
-        .options(selectinload(models.Warehouse.locations))\
+        .where(models.Warehouse.tenant_id == current_user.tenant_id)\
+        .options(
+            selectinload(models.Warehouse.locations),
+            selectinload(models.Warehouse.floors).selectinload(models.Floor.rooms)
+        )\
         .offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
+
+@router.get("/locations-hierarchy")
+async def get_locations_hierarchy(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get all warehouses with floors, rooms, and storage zones for autocomplete"""
+    # Get warehouses with floors and rooms
+    wh_result = await db.execute(
+        select(models.Warehouse)
+        .where(models.Warehouse.tenant_id == current_user.tenant_id)
+        .options(
+            selectinload(models.Warehouse.floors).selectinload(models.Floor.rooms),
+            selectinload(models.Warehouse.zones)
+        )
+    )
+    warehouses = wh_result.scalars().all()
+    
+    # Build hierarchy response
+    result = []
+    for wh in warehouses:
+        wh_data = {
+            "id": str(wh.id),
+            "name": wh.name,
+            "code": wh.code,
+            "floors": [],
+            "zones": []
+        }
+        
+        # Add floors and rooms
+        for floor in wh.floors or []:
+            floor_data = {
+                "id": str(floor.id),
+                "name": floor.floor_name,
+                "floor_number": floor.floor_number,
+                "rooms": [
+                    {
+                        "id": str(r.id),
+                        "name": r.room_name,
+                        "code": r.room_code
+                    }
+                    for r in floor.rooms or []
+                ]
+            }
+            wh_data["floors"].append(floor_data)
+        
+        # Add storage zones
+        for zone in wh.zones or []:
+            wh_data["zones"].append({
+                "id": str(zone.id),
+                "name": zone.zone_name,
+                "type": zone.zone_type.value if zone.zone_type else None
+            })
+        
+        result.append(wh_data)
+    
+    return result
+
 # Location Endpoints
 @router.post("/warehouses/{warehouse_id}/locations", response_model=schemas.LocationResponse)
-async def create_location(warehouse_id: uuid.UUID, location: schemas.LocationCreate, db: AsyncSession = Depends(database.get_db)):
+async def create_location(
+    warehouse_id: uuid.UUID, 
+    location: schemas.LocationCreate, 
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     new_loc = models.Location(
+        tenant_id=current_user.tenant_id,
         warehouse_id=warehouse_id,
         **location.dict()
     )
@@ -62,6 +157,305 @@ async def create_location(warehouse_id: uuid.UUID, location: schemas.LocationCre
         await db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     return new_loc
+
+
+# Warehouse GET by ID & UPDATE
+@router.get("/warehouses/{warehouse_id}", response_model=schemas.WarehouseResponse)
+async def get_warehouse(
+    warehouse_id: uuid.UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(models.Warehouse)
+        .where(
+            models.Warehouse.id == warehouse_id,
+            models.Warehouse.tenant_id == current_user.tenant_id
+        )
+        .options(
+            selectinload(models.Warehouse.locations),
+            selectinload(models.Warehouse.floors).selectinload(models.Floor.rooms)
+        )
+    )
+    warehouse = result.scalar_one_or_none()
+    if not warehouse:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+    return warehouse
+
+
+@router.put("/warehouses/{warehouse_id}", response_model=schemas.WarehouseResponse)
+async def update_warehouse(
+    warehouse_id: uuid.UUID,
+    warehouse_update: schemas.WarehouseUpdate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(models.Warehouse).where(
+            models.Warehouse.id == warehouse_id,
+            models.Warehouse.tenant_id == current_user.tenant_id
+        )
+    )
+    warehouse = result.scalar_one_or_none()
+    if not warehouse:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+    
+    update_data = warehouse_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if value is not None:
+            setattr(warehouse, key, value)
+    
+    try:
+        await db.commit()
+        # Re-fetch with relationships
+        result = await db.execute(
+            select(models.Warehouse)
+            .where(models.Warehouse.id == warehouse_id)
+            .options(
+                selectinload(models.Warehouse.locations),
+                selectinload(models.Warehouse.floors).selectinload(models.Floor.rooms)
+            )
+        )
+        return result.scalar_one()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ===== Floor Endpoints =====
+@router.post("/warehouses/{warehouse_id}/floors", response_model=schemas.FloorResponse)
+async def create_floor(
+    warehouse_id: uuid.UUID,
+    floor: schemas.FloorCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a floor in a warehouse"""
+    # Verify warehouse exists and belongs to tenant
+    wh_result = await db.execute(
+        select(models.Warehouse).where(
+            models.Warehouse.id == warehouse_id,
+            models.Warehouse.tenant_id == current_user.tenant_id
+        )
+    )
+    warehouse = wh_result.scalar_one_or_none()
+    if not warehouse:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+    
+    new_floor = models.Floor(
+        tenant_id=current_user.tenant_id,
+        warehouse_id=warehouse_id,
+        **floor.dict()
+    )
+    db.add(new_floor)
+    
+    try:
+        await db.commit()
+        await db.refresh(new_floor)
+        # Load rooms relationship
+        result = await db.execute(
+            select(models.Floor)
+            .where(models.Floor.id == new_floor.id)
+            .options(selectinload(models.Floor.rooms))
+        )
+        return result.scalar_one()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/floors/{floor_id}")
+async def delete_floor(
+    floor_id: uuid.UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete a floor and all its rooms"""
+    result = await db.execute(
+        select(models.Floor).where(
+            models.Floor.id == floor_id,
+            models.Floor.tenant_id == current_user.tenant_id
+        )
+    )
+    floor = result.scalar_one_or_none()
+    if not floor:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    
+    await db.delete(floor)
+    await db.commit()
+    return {"message": "Floor deleted successfully"}
+
+
+@router.put("/floors/{floor_id}", response_model=schemas.FloorResponse)
+async def update_floor(
+    floor_id: uuid.UUID,
+    floor_update: schemas.FloorUpdate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update a floor"""
+    result = await db.execute(
+        select(models.Floor).where(
+            models.Floor.id == floor_id,
+            models.Floor.tenant_id == current_user.tenant_id
+        ).options(selectinload(models.Floor.rooms))
+    )
+    floor = result.scalar_one_or_none()
+    if not floor:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    
+    # If area is being reduced, check it's not less than total room areas
+    new_area = floor_update.area_sqm if floor_update.area_sqm is not None else floor.area_sqm
+    if floor.rooms:
+        total_room_area = sum(r.area_sqm or 0 for r in floor.rooms)
+        if new_area < total_room_area:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Floor area ({new_area} m²) cannot be less than total room areas ({total_room_area} m²)"
+            )
+    
+    update_data = floor_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if value is not None:
+            setattr(floor, key, value)
+    
+    try:
+        await db.commit()
+        # Re-fetch with rooms
+        result = await db.execute(
+            select(models.Floor)
+            .where(models.Floor.id == floor_id)
+            .options(selectinload(models.Floor.rooms))
+        )
+        return result.scalar_one()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ===== Room Endpoints =====
+@router.post("/floors/{floor_id}/rooms", response_model=schemas.RoomResponse)
+async def create_room(
+    floor_id: uuid.UUID,
+    room: schemas.RoomCreate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a room in a floor"""
+    # Verify floor exists and belongs to tenant
+    floor_result = await db.execute(
+        select(models.Floor).where(
+            models.Floor.id == floor_id,
+            models.Floor.tenant_id == current_user.tenant_id
+        ).options(selectinload(models.Floor.rooms))
+    )
+    floor = floor_result.scalar_one_or_none()
+    if not floor:
+        raise HTTPException(status_code=404, detail="Floor not found")
+    
+    # Validate room area doesn't exceed available floor area
+    if room.area_sqm and floor.area_sqm:
+        existing_room_area = sum(r.area_sqm or 0 for r in floor.rooms)
+        available_area = floor.area_sqm - existing_room_area
+        if room.area_sqm > available_area:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Room area ({room.area_sqm} m²) exceeds available floor area ({available_area} m²)"
+            )
+    
+    # Generate barcode and QR code
+    import uuid as uuid_lib
+    room_uuid = uuid_lib.uuid4()
+    barcode = f"RM-{str(room_uuid)[:8].upper()}"
+    
+    new_room = models.Room(
+        id=room_uuid,
+        tenant_id=current_user.tenant_id,
+        floor_id=floor_id,
+        barcode=barcode,
+        qr_code=str(room_uuid),
+        **room.dict()
+    )
+    db.add(new_room)
+    
+    try:
+        await db.commit()
+        await db.refresh(new_room)
+        return new_room
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/rooms/{room_id}")
+async def delete_room(
+    room_id: uuid.UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete a room"""
+    result = await db.execute(
+        select(models.Room).where(
+            models.Room.id == room_id,
+            models.Room.tenant_id == current_user.tenant_id
+        )
+    )
+    room = result.scalar_one_or_none()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    await db.delete(room)
+    await db.commit()
+    return {"message": "Room deleted successfully"}
+
+
+@router.put("/rooms/{room_id}", response_model=schemas.RoomResponse)
+async def update_room(
+    room_id: uuid.UUID,
+    room_update: schemas.RoomUpdate,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update a room with area validation"""
+    result = await db.execute(
+        select(models.Room).where(
+            models.Room.id == room_id,
+            models.Room.tenant_id == current_user.tenant_id
+        )
+    )
+    room = result.scalar_one_or_none()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    # Get floor info for area validation (only if area is being checked)
+    new_area = room_update.area_sqm if room_update.area_sqm is not None else (room.area_sqm or 0)
+    
+    # Only validate if new area > 0 AND we need to check against floor
+    if new_area and new_area > 0:
+        floor_result = await db.execute(
+            select(models.Floor).where(models.Floor.id == room.floor_id)
+            .options(selectinload(models.Floor.rooms))
+        )
+        floor = floor_result.scalar_one_or_none()
+        
+        if floor and floor.area_sqm and floor.area_sqm > 0:
+            # Calculate total area of OTHER rooms on this floor
+            other_rooms_area = sum(r.area_sqm or 0 for r in floor.rooms if str(r.id) != str(room_id))
+            available_area = floor.area_sqm - other_rooms_area
+            if new_area > available_area:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Room area ({new_area} m²) exceeds available floor area ({available_area} m²)"
+                )
+    
+    update_data = room_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(room, key, value)
+    
+    await db.commit()
+    await db.refresh(room)
+    return room
+
 
 @router.get("/stock")
 async def list_stock(

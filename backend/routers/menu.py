@@ -106,6 +106,15 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Work Orders", "to": "/maintenance/work-orders"},
             {"label": "Schedules", "to": "/maintenance/schedules"}
         ]},
+        {"label": "Fleet", "icon": "i-heroicons-truck", "children": [
+            {"label": "Dashboard", "to": "/fleet"},
+            {"label": "Vehicles", "to": "/fleet/vehicles"},
+            {"label": "Bookings", "to": "/fleet/bookings"},
+            {"label": "Fuel Logs", "to": "/fleet/fuel"},
+            {"label": "Maintenance", "to": "/fleet/maintenance"},
+            {"label": "Expenses", "to": "/fleet/expenses"},
+            {"label": "Reminders", "to": "/fleet/reminders"}
+        ]},
         {"label": "HR & Payroll", "icon": "i-heroicons-user-group", "children": [
             {"label": "Employees", "to": "/hr/employees"},
             {"label": "Payroll Run", "to": "/hr/payroll"}

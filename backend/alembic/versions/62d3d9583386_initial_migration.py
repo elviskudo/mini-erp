@@ -756,9 +756,279 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_schedules_tenant_id ON maintenance_schedules(tenant_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_maintenance_schedules_asset_id ON maintenance_schedules(asset_id)")
 
+    # ==================== FLEET MANAGEMENT MODULE ====================
+
+    # Create Fleet enums
+    op.execute("DO $$ BEGIN CREATE TYPE vehiclestatus AS ENUM ('AVAILABLE', 'IN_USE', 'MAINTENANCE', 'BROKEN', 'RETIRED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE vehiclecategory AS ENUM ('OPERATIONAL', 'LOGISTICS', 'RENTAL', 'EXECUTIVE', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE bookingstatus AS ENUM ('PENDING', 'APPROVED', 'IN_USE', 'COMPLETED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE bookingpurpose AS ENUM ('BUSINESS_TRIP', 'DELIVERY', 'CLIENT_VISIT', 'SITE_INSPECTION', 'PICKUP', 'EVENT', 'TRAINING', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE origintype AS ENUM ('WAREHOUSE', 'STORAGE_ZONE', 'MANUAL'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE fleetexpensecategory AS ENUM ('FUEL', 'TOLL', 'PARKING', 'SERVICE', 'TAX', 'INSURANCE', 'KIR', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE remindertype AS ENUM ('TAX', 'SERVICE', 'INSURANCE', 'KIR', 'STNK', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+
+    # Create fleet_departments table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS fleet_departments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            description TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_fleet_departments_tenant_id ON fleet_departments(tenant_id)")
+
+    # Create fleet_drivers table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS fleet_drivers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            phone VARCHAR,
+            email VARCHAR,
+            card_id_url VARCHAR,
+            card_id_number VARCHAR,
+            employment_status VARCHAR,
+            license_number VARCHAR,
+            license_type VARCHAR,
+            license_expiry DATE,
+            address TEXT,
+            photo_url VARCHAR,
+            qr_code TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_fleet_drivers_tenant_id ON fleet_drivers(tenant_id)")
+
+    # Create fleet_vendors table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS fleet_vendors (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            name VARCHAR NOT NULL,
+            contact_person VARCHAR,
+            phone VARCHAR,
+            email VARCHAR,
+            address TEXT,
+            city VARCHAR,
+            service_types VARCHAR,
+            is_active BOOLEAN DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_fleet_vendors_tenant_id ON fleet_vendors(tenant_id)")
+
+    # Create vehicles table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vehicles (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            code VARCHAR NOT NULL,
+            plate_number VARCHAR NOT NULL,
+            brand VARCHAR NOT NULL,
+            model VARCHAR NOT NULL,
+            year INTEGER,
+            color VARCHAR,
+            vehicle_type VARCHAR,
+            category vehiclecategory DEFAULT 'OPERATIONAL',
+            capacity VARCHAR,
+            fuel_type VARCHAR DEFAULT 'Gasoline',
+            chassis_number VARCHAR,
+            engine_number VARCHAR,
+            stnk_number VARCHAR,
+            bpkb_number VARCHAR,
+            status vehiclestatus DEFAULT 'AVAILABLE',
+            current_odometer FLOAT DEFAULT 0,
+            purchase_date DATE,
+            purchase_cost FLOAT DEFAULT 0,
+            stnk_url VARCHAR,
+            bpkb_url VARCHAR,
+            insurance_url VARCHAR,
+            image_url VARCHAR,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicles_tenant_id ON vehicles(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicles_code ON vehicles(code)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicles_plate_number ON vehicles(plate_number)")
+
+    # Create bookingorigintype enum for vehicle bookings
+    op.execute("DO $$ BEGIN CREATE TYPE bookingorigintype AS ENUM ('WAREHOUSE', 'STORAGE_ZONE', 'MANUAL'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+
+    # Create vehicle_bookings table with new columns
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vehicle_bookings (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+            code VARCHAR NOT NULL,
+            purpose bookingpurpose DEFAULT 'BUSINESS_TRIP',
+            origin_type bookingorigintype DEFAULT 'MANUAL',
+            origin_warehouse_id UUID REFERENCES warehouses(id),
+            origin_zone_id UUID REFERENCES storage_zones(id),
+            origin_address VARCHAR,
+            origin_lat FLOAT,
+            origin_lng FLOAT,
+            destination VARCHAR NOT NULL,
+            destination_lat FLOAT,
+            destination_lng FLOAT,
+            start_datetime TIMESTAMP NOT NULL,
+            end_datetime TIMESTAMP NOT NULL,
+            actual_start TIMESTAMP,
+            actual_end TIMESTAMP,
+            start_odometer FLOAT,
+            end_odometer FLOAT,
+            requested_by UUID REFERENCES users(id),
+            driver_id UUID REFERENCES fleet_drivers(id),
+            department_id UUID REFERENCES fleet_departments(id),
+            project_id VARCHAR,
+            status bookingstatus DEFAULT 'PENDING',
+            approved_by UUID REFERENCES users(id),
+            approved_at TIMESTAMP,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_bookings_tenant_id ON vehicle_bookings(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_bookings_vehicle_id ON vehicle_bookings(vehicle_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_bookings_status ON vehicle_bookings(status)")
+
+
+    # Create vehicle_fuel_logs table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vehicle_fuel_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+            driver_id UUID REFERENCES fleet_drivers(id),
+            date DATE NOT NULL,
+            odometer FLOAT NOT NULL,
+            fuel_type VARCHAR DEFAULT 'Gasoline',
+            liters FLOAT NOT NULL,
+            price_per_liter FLOAT NOT NULL,
+            total_cost FLOAT NOT NULL,
+            gas_station VARCHAR NOT NULL,
+            lat FLOAT,
+            lng FLOAT,
+            distance_traveled FLOAT,
+            fuel_efficiency FLOAT,
+            recorded_by UUID REFERENCES users(id),
+            notes TEXT,
+            receipt_url VARCHAR NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_fuel_logs_tenant_id ON vehicle_fuel_logs(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_fuel_logs_vehicle_id ON vehicle_fuel_logs(vehicle_id)")
+
+
+    # Create vehicle_maintenance_logs table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vehicle_maintenance_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+            vendor_id UUID NOT NULL REFERENCES fleet_vendors(id),
+            date DATE NOT NULL,
+            odometer FLOAT NOT NULL,
+            service_type VARCHAR NOT NULL,
+            description TEXT NOT NULL,
+            lat FLOAT,
+            lng FLOAT,
+            parts_cost FLOAT NOT NULL DEFAULT 0,
+            labor_cost FLOAT NOT NULL DEFAULT 0,
+            total_cost FLOAT NOT NULL DEFAULT 0,
+            next_service_date DATE NOT NULL,
+            next_service_odometer FLOAT,
+            performed_by VARCHAR,
+            recorded_by UUID REFERENCES users(id),
+            invoice_number VARCHAR,
+            receipt_url VARCHAR,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_maintenance_logs_tenant_id ON vehicle_maintenance_logs(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_maintenance_logs_vehicle_id ON vehicle_maintenance_logs(vehicle_id)")
+
+
+    # Create vehicle_expenses table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vehicle_expenses (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+            date DATE NOT NULL,
+            category fleetexpensecategory DEFAULT 'OTHER',
+            description VARCHAR NOT NULL,
+            amount FLOAT NOT NULL,
+            booking_id UUID REFERENCES vehicle_bookings(id),
+            recorded_by UUID REFERENCES users(id),
+            receipt_url VARCHAR,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_expenses_tenant_id ON vehicle_expenses(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_expenses_vehicle_id ON vehicle_expenses(vehicle_id)")
+
+    # Create vehicle_reminders table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS vehicle_reminders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+            reminder_type remindertype NOT NULL,
+            title VARCHAR NOT NULL,
+            due_date DATE NOT NULL,
+            remind_days_before INTEGER DEFAULT 30,
+            is_notified BOOLEAN DEFAULT FALSE,
+            is_completed BOOLEAN DEFAULT FALSE,
+            completed_at TIMESTAMP,
+            completed_by UUID REFERENCES users(id),
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_reminders_tenant_id ON vehicle_reminders(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_reminders_vehicle_id ON vehicle_reminders(vehicle_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_reminders_due_date ON vehicle_reminders(due_date)")
+
 
 def downgrade() -> None:
-    # Drop Maintenance module tables first (reverse order of creation)
+    # Drop Fleet module tables first (reverse order of creation)
+    op.execute("DROP TABLE IF EXISTS vehicle_reminders")
+    op.execute("DROP TABLE IF EXISTS vehicle_expenses")
+    op.execute("DROP TABLE IF EXISTS vehicle_maintenance_logs")
+    op.execute("DROP TABLE IF EXISTS vehicle_fuel_logs")
+    op.execute("DROP TABLE IF EXISTS vehicle_bookings")
+    op.execute("DROP TABLE IF EXISTS vehicles CASCADE")
+    op.execute("DROP TABLE IF EXISTS fleet_vendors")
+    op.execute("DROP TABLE IF EXISTS fleet_drivers")
+    op.execute("DROP TABLE IF EXISTS fleet_departments")
+    op.execute("DROP TYPE IF EXISTS remindertype")
+    op.execute("DROP TYPE IF EXISTS fleetexpensecategory")
+    op.execute("DROP TYPE IF EXISTS origintype")
+    op.execute("DROP TYPE IF EXISTS bookingpurpose")
+    op.execute("DROP TYPE IF EXISTS bookingstatus")
+    op.execute("DROP TYPE IF EXISTS vehiclecategory")
+    op.execute("DROP TYPE IF EXISTS vehiclestatus")
+    
+    # Drop Maintenance module tables (reverse order of creation)
     op.execute("DROP TABLE IF EXISTS maintenance_schedules")
     op.execute("DROP TABLE IF EXISTS maintenance_work_order_costs")
     op.execute("DROP TABLE IF EXISTS maintenance_work_order_parts")
@@ -769,6 +1039,7 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS task_attachments")
     op.execute("DROP TABLE IF EXISTS task_comments")
     op.execute("DROP TABLE IF EXISTS task_assignees")
+
     
     # Drop Projects module tables
     op.execute("DROP TABLE IF EXISTS project_expenses")

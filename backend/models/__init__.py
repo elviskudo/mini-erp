@@ -18,6 +18,7 @@ from .models_sales import *
 from .models_crm import *
 from .models_projects import *
 from .models_maintenance import *
+from .models_fleet import *
 from .models_qms import *
 from .models_pos import *
 from .models_saas import Tenant, TenantMember, MemberRole, SubscriptionTier

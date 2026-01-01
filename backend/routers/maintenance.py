@@ -277,11 +277,17 @@ async def create_work_order(
     count = await db.scalar(select(func.count()).select_from(MaintenanceWorkOrder).where(MaintenanceWorkOrder.tenant_id == current_user.tenant_id))
     code = f"WO-{today.year}-{(count or 0) + 1:04d}"
     
+    # Convert work order data to dict and handle timezone
+    wo_data = wo.model_dump()
+    if wo_data.get('scheduled_date') and hasattr(wo_data['scheduled_date'], 'replace'):
+        # Convert to naive datetime if timezone-aware
+        wo_data['scheduled_date'] = wo_data['scheduled_date'].replace(tzinfo=None)
+    
     db_wo = MaintenanceWorkOrder(
         tenant_id=current_user.tenant_id,
         code=code,
         reported_by=current_user.id,
-        **wo.model_dump()
+        **wo_data
     )
     db.add(db_wo)
     await db.commit()

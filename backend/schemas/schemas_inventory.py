@@ -10,6 +10,56 @@ class ZoneType(str, Enum):
     DANGEROUS = "Dangerous"
 
 
+# ===== Room Schemas =====
+class RoomBase(BaseModel):
+    room_code: str
+    room_name: str
+    capacity: int = 0
+    area_sqm: float = 0
+
+class RoomCreate(RoomBase):
+    pass
+
+class RoomUpdate(BaseModel):
+    room_code: Optional[str] = None
+    room_name: Optional[str] = None
+    capacity: Optional[int] = None
+    area_sqm: Optional[float] = None
+
+class RoomResponse(RoomBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    floor_id: uuid.UUID
+    barcode: Optional[str] = None
+    qr_code: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+
+# ===== Floor Schemas =====
+class FloorBase(BaseModel):
+    floor_number: int
+    floor_name: str
+    area_sqm: float = 0
+
+class FloorCreate(FloorBase):
+    pass
+
+class FloorUpdate(BaseModel):
+    floor_number: Optional[int] = None
+    floor_name: Optional[str] = None
+    area_sqm: Optional[float] = None
+
+class FloorResponse(FloorBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    warehouse_id: uuid.UUID
+    rooms: List[RoomResponse] = []
+    class Config:
+        from_attributes = True
+
+
+# ===== Location Schemas =====
 class LocationBase(BaseModel):
     code: str
     name: str
@@ -23,23 +73,43 @@ class LocationResponse(LocationBase):
     class Config:
         from_attributes = True
 
+
+# ===== Warehouse Schemas =====
 class WarehouseBase(BaseModel):
     code: str
     name: str
-    address: str
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    total_floors: int = 1
+
+class FloorCreateInline(BaseModel):
+    """For creating floors inline with warehouse"""
+    floor_number: int
+    floor_name: str
+    area_sqm: float = 0
 
 class WarehouseCreate(WarehouseBase):
-    pass
+    floors: Optional[List[FloorCreateInline]] = None
+
+class WarehouseUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    total_floors: Optional[int] = None
 
 class WarehouseResponse(WarehouseBase):
     id: uuid.UUID
     tenant_id: Optional[uuid.UUID] = None
     locations: List[LocationResponse] = []
+    floors: List[FloorResponse] = []
     class Config:
         from_attributes = True
 
 
-# Storage Zone Schemas
+# ===== Storage Zone Schemas =====
 class StorageZoneBase(BaseModel):
     warehouse_id: uuid.UUID
     zone_name: str

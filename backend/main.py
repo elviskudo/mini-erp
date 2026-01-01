@@ -5,7 +5,7 @@ from database import engine, Base
 from routers import (
     auth, manufacturing, iot, mrp, qc, inventory, 
     procurement, receiving, issuance, opname, delivery, logistics,
-    finance, hr, crm, projects, maintenance, ecommerce, compliance,
+    finance, hr, crm, projects, maintenance, fleet, ecommerce, compliance,
     ap, ar, subscription, upload, tenants, saas, menu, users, dashboard, export, settings,
     pos
 )
@@ -66,6 +66,7 @@ app.include_router(hr.router)
 app.include_router(crm.router)
 app.include_router(projects.router)
 app.include_router(maintenance.router)
+app.include_router(fleet.router)
 app.include_router(ecommerce.router)
 app.include_router(compliance.router)
 app.include_router(subscription.router)

@@ -7,30 +7,34 @@ import schemas
 from connections.rabbitmq_utils import get_rabbitmq_connection
 import json
 import aio_pika
+import uuid
+
+# Default tenant ID for MVP (should come from auth in production)
+DEFAULT_TENANT_ID = uuid.UUID("6c812e6d-da95-49e8-8510-cc36b196bdb6")
 
 async def post_journal_entry(db: AsyncSession, entry_data: schemas.JournalEntryCreate, user_id=None):
+    # Get details using helper method
+    details = entry_data.get_details()
+    
+    if not details:
+        raise HTTPException(status_code=400, detail="Journal entry must have at least one detail line")
+    
     # 1. Validate Balance
-    total_debit = sum(d.debit for d in entry_data.details)
-    total_credit = sum(d.credit for d in entry_data.details)
+    total_debit = sum(d.debit or 0 for d in details)
+    total_credit = sum(d.credit or 0 for d in details)
     
     if abs(total_debit - total_credit) > 0.01: # Floating point tolerance
         raise HTTPException(status_code=400, detail="Journal Entry is not balanced")
 
-    # 2. Check Fiscal Period (Simplified)
-    # Ideally find period by date and check is_closed
-    # For MVP: Just check if *any* closed period covers this date
-    # query = select(models.FiscalPeriod).where(
-    #     models.FiscalPeriod.start_date <= entry_data.date, 
-    #     models.FiscalPeriod.end_date >= entry_data.date,
-    #     models.FiscalPeriod.is_closed == True
-    # )
-    # ... if result: raise HTTPException ...
+    # 2. Check Fiscal Period (Simplified) - Skipped for MVP
 
     # 3. Create Entry
+    entry_date = entry_data.date or datetime.utcnow()
     new_entry = models.JournalEntry(
-        date=entry_data.date,
+        tenant_id=DEFAULT_TENANT_ID,
+        date=entry_date,
         description=entry_data.description,
-        reference_id=entry_data.reference_id,
+        reference_id=entry_data.get_reference_id(),
         reference_type=entry_data.reference_type,
         posted_by=user_id
     )
@@ -38,14 +42,25 @@ async def post_journal_entry(db: AsyncSession, entry_data: schemas.JournalEntryC
     await db.flush() # Get ID
 
     # 4. Create Details
-    for d in entry_data.details:
+    # Store details for response
+    created_details = []
+    for d in details:
+        detail_id = uuid.uuid4()  # Generate ID upfront
         detail = models.JournalDetail(
+            id=detail_id,
+            tenant_id=DEFAULT_TENANT_ID,
             journal_entry_id=new_entry.id,
             account_id=d.account_id,
-            debit=d.debit,
-            credit=d.credit
+            debit=d.debit or 0,
+            credit=d.credit or 0
         )
         db.add(detail)
+        created_details.append({
+            "id": detail_id,
+            "account_id": d.account_id,
+            "debit": d.debit or 0,
+            "credit": d.credit or 0
+        })
     
     await db.commit()
     await db.refresh(new_entry)
@@ -75,4 +90,11 @@ async def post_journal_entry(db: AsyncSession, entry_data: schemas.JournalEntryC
         print(f"Failed to publish event: {e}") 
         # Non-blocking failure
 
-    return new_entry
+    # Return dict to avoid MissingGreenlet error
+    return {
+        "id": new_entry.id,
+        "date": new_entry.date,
+        "description": new_entry.description,
+        "reference_id": new_entry.reference_id,
+        "details": created_details
+    }

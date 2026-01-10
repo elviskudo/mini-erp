@@ -23,6 +23,20 @@ class AccountCreate(BaseModel):
     name: str
     type: str
     parent_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = True
+
+# Simple response without children for create/update operations
+class AccountSimpleResponse(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    type: str
+    parent_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = True
+    class Config:
+        from_attributes = True
 
 class AccountResponse(BaseModel):
     id: uuid.UUID
@@ -30,6 +44,8 @@ class AccountResponse(BaseModel):
     name: str
     type: str
     parent_id: Optional[uuid.UUID]
+    description: Optional[str] = None
+    is_active: Optional[bool] = True
     children: List['AccountResponse'] = []
     class Config:
         from_attributes = True
@@ -49,14 +65,19 @@ class PeriodResponse(BaseModel):
         from_attributes = True
 
 # COA Endpoints
-@router.post("/coa", response_model=AccountResponse)
+# Default tenant ID for MVP (should come from auth in production)
+DEFAULT_TENANT_ID = uuid.UUID("6c812e6d-da95-49e8-8510-cc36b196bdb6")
+
+@router.post("/coa", response_model=AccountSimpleResponse)
 async def create_account(account: AccountCreate, db: AsyncSession = Depends(database.get_db)):
     # Check duplicate code
     existing = await db.execute(select(models.ChartOfAccount).where(models.ChartOfAccount.code == account.code))
     if existing.scalar_one_or_none():
          raise HTTPException(status_code=400, detail="Account code already exists")
 
-    new_account = models.ChartOfAccount(**account.dict())
+    account_data = account.dict()
+    account_data['tenant_id'] = DEFAULT_TENANT_ID
+    new_account = models.ChartOfAccount(**account_data)
     db.add(new_account)
     await db.commit()
     await db.refresh(new_account)
@@ -64,7 +85,48 @@ async def create_account(account: AccountCreate, db: AsyncSession = Depends(data
     # Invalidate Cache
     await redis_client.delete("coa_hierarchy")
     
-    return new_account
+    # Return dict to avoid lazy loading issues
+    return {
+        "id": new_account.id,
+        "code": new_account.code,
+        "name": new_account.name,
+        "type": new_account.type,
+        "parent_id": new_account.parent_id,
+        "description": new_account.description,
+        "is_active": new_account.is_active
+    }
+
+@router.put("/coa/{account_id}", response_model=AccountSimpleResponse)
+async def update_account(account_id: uuid.UUID, account: AccountCreate, db: AsyncSession = Depends(database.get_db)):
+    existing = await db.get(models.ChartOfAccount, account_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    # Check duplicate code (if changed)
+    if account.code != existing.code:
+        dup = await db.execute(select(models.ChartOfAccount).where(models.ChartOfAccount.code == account.code))
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Account code already exists")
+    
+    for key, value in account.dict().items():
+        setattr(existing, key, value)
+    
+    await db.commit()
+    await db.refresh(existing)
+    
+    # Invalidate Cache
+    await redis_client.delete("coa_hierarchy")
+    
+    # Return dict to avoid lazy loading issues
+    return {
+        "id": existing.id,
+        "code": existing.code,
+        "name": existing.name,
+        "type": existing.type,
+        "parent_id": existing.parent_id,
+        "description": existing.description,
+        "is_active": existing.is_active
+    }
 
 @router.get("/coa", response_model=List[AccountResponse])
 async def get_coa(db: AsyncSession = Depends(database.get_db)):
@@ -176,6 +238,71 @@ async def seed_coa(db: AsyncSession = Depends(database.get_db)):
     await redis_client.delete("coa_hierarchy")
     return {"status": "Seeded"}
 
+# General Ledger Query
+from sqlalchemy.orm import selectinload
+
+@router.get("/gl")
+async def get_general_ledger(
+    account_id: uuid.UUID,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    db: AsyncSession = Depends(database.get_db)
+):
+    """Get journal entries for a specific account with running balance"""
+    # Verify account exists
+    account = await db.get(models.ChartOfAccount, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    # Build query for journal details with eager loading of entry
+    query = select(models.JournalDetail).options(
+        selectinload(models.JournalDetail.entry)
+    ).join(models.JournalEntry).where(
+        models.JournalDetail.account_id == account_id
+    ).order_by(models.JournalEntry.date)
+    
+    if date_from:
+        query = query.where(models.JournalEntry.date >= date_from)
+    if date_to:
+        query = query.where(models.JournalEntry.date <= date_to)
+    
+    result = await db.execute(query)
+    details = result.scalars().all()
+    
+    # Calculate running balance
+    # For assets/expenses: debit increases balance, credit decreases
+    # For liabilities/equity/revenue: credit increases balance, debit decreases
+    entries = []
+    running_balance = 0.0
+    opening_balance = 0.0  # TODO: Calculate from prior periods
+    
+    for detail in details:
+        debit = getattr(detail, 'debit', 0) or 0
+        credit = getattr(detail, 'credit', 0) or 0
+        
+        # Determine balance effect based on account type
+        if account.type in ['Asset', 'Expense']:
+            running_balance += debit - credit
+        else:
+            running_balance += credit - debit
+        
+        entries.append({
+            "date": detail.entry.date.isoformat() if detail.entry else None,
+            "journal_number": f"JE-{str(detail.journal_entry_id)[:8]}",
+            "description": detail.entry.description if detail.entry else "",
+            "debit": debit,
+            "credit": credit,
+            "balance": running_balance
+        })
+    
+    return {
+        "account_id": str(account_id),
+        "account_code": account.code,
+        "account_name": account.name,
+        "opening_balance": opening_balance,
+        "entries": entries
+    }
+
 # Fiscal Periods
 @router.post("/periods", response_model=PeriodResponse)
 async def create_period(period: PeriodCreate, db: AsyncSession = Depends(database.get_db)):
@@ -208,7 +335,7 @@ async def close_period(id: uuid.UUID, db: AsyncSession = Depends(database.get_db
 import schemas
 from services.gl_engine import post_journal_entry
 
-@router.post("/journal", response_model=schemas.JournalEntryResponse)
+@router.post("/journal")
 async def create_journal(entry: schemas.JournalEntryCreate, db: AsyncSession = Depends(database.get_db)):
     # User ID would come from auth in real scenario
     return await post_journal_entry(db, entry, user_id=None)
@@ -245,3 +372,195 @@ async def get_pl(start_date: datetime, end_date: datetime, db: AsyncSession = De
 @router.get("/reports/balance-sheet")
 async def get_balance_sheet(date: datetime, db: AsyncSession = Depends(database.get_db)):
     return await reporting_engine.generate_balance_sheet(db, date)
+
+
+# ========== BANKING ACCOUNTS ==========
+from pydantic import BaseModel as PydanticBase
+from models.models_banking import BankAccount, BankAccountType
+
+# Default tenant for MVP
+DEFAULT_TENANT_ID = uuid.UUID("6c812e6d-da95-49e8-8510-cc36b196bdb6")
+
+
+class BankAccountCreate(PydanticBase):
+    code: str
+    name: str
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    account_holder: Optional[str] = None
+    account_type: Optional[str] = "Checking"
+    currency_code: str = "IDR"
+    opening_balance: float = 0.0
+    gl_account_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = None
+
+
+class BankAccountUpdate(PydanticBase):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    account_holder: Optional[str] = None
+    account_type: Optional[str] = None
+    currency_code: Optional[str] = None
+    opening_balance: Optional[float] = None
+    current_balance: Optional[float] = None
+    gl_account_id: Optional[uuid.UUID] = None
+    is_active: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+@router.get("/banking/accounts")
+async def list_bank_accounts(db: AsyncSession = Depends(database.get_db)):
+    """List all bank accounts"""
+    result = await db.execute(
+        select(BankAccount).where(BankAccount.tenant_id == DEFAULT_TENANT_ID)
+        .order_by(BankAccount.code)
+    )
+    accounts = result.scalars().all()
+    return [
+        {
+            "id": str(a.id),
+            "code": a.code,
+            "name": a.name,
+            "bank_name": a.bank_name,
+            "account_number": a.account_number,
+            "account_holder": a.account_holder,
+            "account_type": a.account_type.value if hasattr(a.account_type, 'value') else str(a.account_type) if a.account_type else "Checking",
+            "currency_code": a.currency_code or "IDR",
+            "opening_balance": a.opening_balance or 0,
+            "current_balance": a.current_balance or 0,
+            "gl_account_id": str(a.gl_account_id) if a.gl_account_id else None,
+            "is_active": a.is_active if hasattr(a, 'is_active') else True,
+            "notes": a.notes
+        } for a in accounts
+    ]
+
+
+@router.get("/banking/accounts/{account_id}")
+async def get_bank_account(account_id: uuid.UUID, db: AsyncSession = Depends(database.get_db)):
+    """Get a single bank account by ID"""
+    result = await db.execute(
+        select(BankAccount).where(
+            BankAccount.id == account_id,
+            BankAccount.tenant_id == DEFAULT_TENANT_ID
+        )
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    
+    return {
+        "id": str(account.id),
+        "code": account.code,
+        "name": account.name,
+        "bank_name": account.bank_name,
+        "account_number": account.account_number,
+        "account_holder": account.account_holder,
+        "account_type": account.account_type.value if hasattr(account.account_type, 'value') else str(account.account_type) if account.account_type else "Checking",
+        "currency_code": account.currency_code or "IDR",
+        "opening_balance": account.opening_balance or 0,
+        "current_balance": account.current_balance or 0,
+        "gl_account_id": str(account.gl_account_id) if account.gl_account_id else None,
+        "is_active": account.is_active if hasattr(account, 'is_active') else True,
+        "notes": account.notes
+    }
+
+
+@router.post("/banking/accounts")
+async def create_bank_account(payload: BankAccountCreate, db: AsyncSession = Depends(database.get_db)):
+    """Create a new bank account"""
+    new_account = BankAccount(
+        tenant_id=DEFAULT_TENANT_ID,
+        code=payload.code,
+        name=payload.name,
+        bank_name=payload.bank_name,
+        account_number=payload.account_number,
+        account_holder=payload.account_holder,
+        account_type=payload.account_type,
+        currency_code=payload.currency_code,
+        opening_balance=payload.opening_balance,
+        current_balance=payload.opening_balance,  # Start with opening balance
+        gl_account_id=payload.gl_account_id,
+        notes=payload.notes,
+        is_active=True
+    )
+    db.add(new_account)
+    await db.commit()
+    await db.refresh(new_account)
+    
+    return {
+        "id": str(new_account.id),
+        "code": new_account.code,
+        "name": new_account.name,
+        "message": "Bank account created successfully"
+    }
+
+
+@router.put("/banking/accounts/{account_id}")
+async def update_bank_account(
+    account_id: uuid.UUID,
+    payload: BankAccountUpdate,
+    db: AsyncSession = Depends(database.get_db)
+):
+    """Update an existing bank account"""
+    result = await db.execute(
+        select(BankAccount).where(
+            BankAccount.id == account_id,
+            BankAccount.tenant_id == DEFAULT_TENANT_ID
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    
+    # Update fields if provided
+    if payload.code is not None:
+        existing.code = payload.code
+    if payload.name is not None:
+        existing.name = payload.name
+    if payload.bank_name is not None:
+        existing.bank_name = payload.bank_name
+    if payload.account_number is not None:
+        existing.account_number = payload.account_number
+    if payload.account_holder is not None:
+        existing.account_holder = payload.account_holder
+    if payload.account_type is not None:
+        existing.account_type = payload.account_type
+    if payload.currency_code is not None:
+        existing.currency_code = payload.currency_code
+    if payload.opening_balance is not None:
+        existing.opening_balance = payload.opening_balance
+    if payload.current_balance is not None:
+        existing.current_balance = payload.current_balance
+    if payload.gl_account_id is not None:
+        existing.gl_account_id = payload.gl_account_id
+    if payload.is_active is not None:
+        existing.is_active = payload.is_active
+    if payload.notes is not None:
+        existing.notes = payload.notes
+    
+    await db.commit()
+    await db.refresh(existing)
+    
+    return {"message": "Bank account updated", "id": str(existing.id)}
+
+
+@router.delete("/banking/accounts/{account_id}")
+async def delete_bank_account(account_id: uuid.UUID, db: AsyncSession = Depends(database.get_db)):
+    """Delete (deactivate) a bank account"""
+    result = await db.execute(
+        select(BankAccount).where(
+            BankAccount.id == account_id,
+            BankAccount.tenant_id == DEFAULT_TENANT_ID
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    
+    # Soft delete - just deactivate
+    existing.is_active = False
+    await db.commit()
+    
+    return {"message": "Bank account deactivated", "id": str(account_id)}

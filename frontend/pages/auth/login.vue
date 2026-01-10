@@ -150,13 +150,24 @@ const handleLogin = async () => {
         
         authStore.setToken(response.data.access_token)
         
-        // Fetch user details to get tenant info immediately
+        // Fetch user details and tenant info
         try {
           const user: any = await $api.get('/auth/me')
           
           if (user.data.tenant_id) {
-             // Fetch tenant details if needed, or just rely on store
-             // For now, we rely on the token/user data
+             // Fetch tenant details including timezone
+             try {
+               const tenant: any = await $api.get(`/tenants/${user.data.tenant_id}`)
+               authStore.setTenant({
+                 id: tenant.data.id,
+                 name: tenant.data.name,
+                 company_code: tenant.data.domain,
+                 timezone: tenant.data.timezone || 'UTC',
+                 currency: tenant.data.currency || 'USD'
+               })
+             } catch (tenantError) {
+               console.error('Failed to fetch tenant details:', tenantError)
+             }
           }
         } catch (meError) {
           console.error('Failed to fetch user details:', meError)

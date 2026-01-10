@@ -5,15 +5,25 @@ from datetime import datetime
 
 class JournalDetailCreate(BaseModel):
     account_id: uuid.UUID
-    debit: float
-    credit: float
+    debit: float = 0
+    credit: float = 0
 
 class JournalEntryCreate(BaseModel):
-    date: datetime = datetime.utcnow()
+    date: Optional[datetime] = None
     description: str
+    reference: Optional[str] = None  # From frontend
     reference_id: Optional[str] = None
     reference_type: Optional[str] = None
-    details: List[JournalDetailCreate]
+    lines: Optional[List[JournalDetailCreate]] = None  # From frontend
+    details: Optional[List[JournalDetailCreate]] = None  # Alternative name
+    
+    def get_details(self) -> List[JournalDetailCreate]:
+        """Returns the journal details, preferring 'lines' if present"""
+        return self.lines or self.details or []
+    
+    def get_reference_id(self) -> Optional[str]:
+        """Returns reference_id, falling back to reference"""
+        return self.reference_id or self.reference
 
 class JournalDetailResponse(BaseModel):
     id: uuid.UUID

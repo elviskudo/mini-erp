@@ -16,6 +16,7 @@ import base64
 import database
 import models
 from auth import get_current_user
+from connections.mongodb import get_mongo_db
 from schemas.schemas_fleet import (
     VehicleCreate, VehicleUpdate, VehicleResponse,
     BookingCreate, BookingUpdate, BookingResponse, BookingStatus,
@@ -27,6 +28,10 @@ from schemas.schemas_fleet import (
     DriverCreate, DriverUpdate, DriverResponse,
     VendorCreate, VendorUpdate, VendorResponse,
     FleetStats
+)
+from schemas.schemas_tracking import (
+    VehicleLocationUpdate, VehicleLocationResponse,
+    JourneySimulationRequest, SeedJourneyData
 )
 
 router = APIRouter(
@@ -618,6 +623,11 @@ async def update_booking(
         update_data['approved_by'] = current_user.id
         update_data['approved_at'] = datetime.utcnow()
     
+    # Handle rejection
+    if update_data.get('status') == BookingStatus.REJECTED and booking.status == 'PENDING':
+        update_data['rejected_by'] = current_user.id
+        update_data['rejected_at'] = datetime.utcnow()
+    
     # Handle timezone
     for dt_field in ['start_datetime', 'end_datetime', 'actual_start', 'actual_end']:
         if update_data.get(dt_field) and hasattr(update_data[dt_field], 'replace'):
@@ -899,3 +909,572 @@ async def delete_reminder(
     await db.delete(reminder)
     await db.commit()
     return {"message": "Reminder deleted successfully"}
+
+
+# ==================== LIVE TRACKING ====================
+
+@router.get("/vehicles-in-journey")
+async def get_vehicles_in_journey(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get all vehicles currently in journey with comprehensive details"""
+    tenant_id = current_user.tenant_id
+    
+    # Get active bookings (IN_USE status)
+    bookings_result = await db.execute(
+        select(models.VehicleBooking)
+        .where(and_(
+            models.VehicleBooking.tenant_id == tenant_id,
+            models.VehicleBooking.status == 'IN_USE'
+        ))
+        .options(
+            selectinload(models.VehicleBooking.vehicle),
+            selectinload(models.VehicleBooking.driver),
+            selectinload(models.VehicleBooking.department)
+        )
+    )
+    active_bookings = bookings_result.scalars().all()
+    
+    vehicles_data = []
+    for booking in active_bookings:
+        vehicle = booking.vehicle
+        if not vehicle:
+            continue
+            
+        # Get last fuel log
+        fuel_result = await db.execute(
+            select(models.VehicleFuelLog)
+            .where(models.VehicleFuelLog.vehicle_id == vehicle.id)
+            .order_by(models.VehicleFuelLog.date.desc())
+            .limit(1)
+        )
+        last_fuel = fuel_result.scalar_one_or_none()
+        
+        # Get last maintenance
+        maint_result = await db.execute(
+            select(models.VehicleMaintenanceLog)
+            .where(models.VehicleMaintenanceLog.vehicle_id == vehicle.id)
+            .order_by(models.VehicleMaintenanceLog.date.desc())
+            .limit(1)
+        )
+        last_maint = maint_result.scalar_one_or_none()
+        
+        # Get next reminder/maintenance
+        next_reminder_result = await db.execute(
+            select(models.VehicleReminder)
+            .where(and_(
+                models.VehicleReminder.vehicle_id == vehicle.id,
+                models.VehicleReminder.is_completed == False
+            ))
+            .order_by(models.VehicleReminder.due_date)
+            .limit(1)
+        )
+        next_reminder = next_reminder_result.scalar_one_or_none()
+        
+        # Get total expenses for this vehicle
+        total_expense = await db.scalar(
+            select(func.coalesce(func.sum(models.VehicleExpense.amount), 0))
+            .where(models.VehicleExpense.vehicle_id == vehicle.id)
+        )
+        
+        vehicles_data.append({
+            "vehicle": {
+                "id": str(vehicle.id),
+                "code": vehicle.code,
+                "plate_number": vehicle.plate_number,
+                "brand": vehicle.brand,
+                "model": vehicle.model,
+                "year": vehicle.year,
+                "vehicle_type": vehicle.vehicle_type,
+                "current_odometer": vehicle.current_odometer,
+                "image_url": vehicle.image_url
+            },
+            "booking": {
+                "id": str(booking.id),
+                "code": booking.code,
+                "purpose": booking.purpose.value if booking.purpose else None,
+                "destination": booking.destination,
+                "destination_lat": booking.destination_lat,
+                "destination_lng": booking.destination_lng,
+                "origin_address": booking.origin_address,
+                "origin_lat": booking.origin_lat,
+                "origin_lng": booking.origin_lng,
+                "start_datetime": booking.start_datetime.isoformat() if booking.start_datetime else None,
+                "end_datetime": booking.end_datetime.isoformat() if booking.end_datetime else None,
+                "actual_start": booking.actual_start.isoformat() if booking.actual_start else None,
+                "department_name": booking.department.name if booking.department else None
+            },
+            "driver": {
+                "id": str(booking.driver.id) if booking.driver else None,
+                "name": booking.driver.name if booking.driver else None,
+                "phone": booking.driver.phone if booking.driver else None,
+                "photo_url": booking.driver.photo_url if booking.driver else None
+            } if booking.driver else None,
+            "last_fuel": {
+                "date": last_fuel.date.isoformat() if last_fuel else None,
+                "liters": last_fuel.liters if last_fuel else None,
+                "total_cost": last_fuel.total_cost if last_fuel else None
+            } if last_fuel else None,
+            "last_maintenance": {
+                "date": last_maint.date.isoformat() if last_maint else None,
+                "service_type": last_maint.service_type if last_maint else None,
+                "total_cost": last_maint.total_cost if last_maint else None
+            } if last_maint else None,
+            "next_reminder": {
+                "title": next_reminder.title if next_reminder else None,
+                "due_date": next_reminder.due_date.isoformat() if next_reminder else None,
+                "reminder_type": next_reminder.reminder_type.value if next_reminder else None
+            } if next_reminder else None,
+            "total_expense": total_expense or 0,
+            # Get current position from MongoDB or use origin as fallback
+            "current_position": {
+                "lat": booking.origin_lat or -6.2088,  # Default to Jakarta
+                "lng": booking.origin_lng or 106.8456
+            }
+        })
+    
+    return {"vehicles": vehicles_data, "count": len(vehicles_data)}
+
+
+# ==================== REAL-TIME LOCATION TRACKING ====================
+
+@router.post("/vehicle-location")
+async def update_vehicle_location(
+    location: VehicleLocationUpdate,
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update vehicle's current GPS position in MongoDB"""
+    mongo_db = await get_mongo_db()
+    if not mongo_db:
+        raise HTTPException(status_code=500, detail="MongoDB not available")
+    
+    collection = mongo_db["vehicle_locations"]
+    
+    # Upsert location data
+    location_data = {
+        "vehicle_id": str(location.vehicle_id),
+        "booking_id": str(location.booking_id) if location.booking_id else None,
+        "tenant_id": str(current_user.tenant_id),
+        "lat": location.lat,
+        "lng": location.lng,
+        "speed": location.speed,
+        "heading": location.heading,
+        "accuracy": location.accuracy,
+        "timestamp": datetime.utcnow(),
+        "updated_by": str(current_user.id)
+    }
+    
+    # Update or insert
+    await collection.update_one(
+        {"vehicle_id": str(location.vehicle_id), "tenant_id": str(current_user.tenant_id)},
+        {"$set": location_data},
+        upsert=True
+    )
+    
+    # Also save to history collection for route tracking
+    history_collection = mongo_db["vehicle_location_history"]
+    await history_collection.insert_one({
+        **location_data,
+        "created_at": datetime.utcnow()
+    })
+    
+    return {"message": "Location updated", "timestamp": location_data["timestamp"]}
+
+
+@router.get("/vehicle-locations")
+async def get_vehicle_locations(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get all active vehicle locations from MongoDB with vehicle details"""
+    mongo_db = await get_mongo_db()
+    if not mongo_db:
+        raise HTTPException(status_code=500, detail="MongoDB not available")
+    
+    collection = mongo_db["vehicle_locations"]
+    tenant_id = str(current_user.tenant_id)
+    
+    # Get all locations for this tenant
+    cursor = collection.find({"tenant_id": tenant_id})
+    locations = await cursor.to_list(length=100)
+    
+    # Enrich with vehicle and booking data from PostgreSQL
+    enriched_locations = []
+    for loc in locations:
+        vehicle_id = loc.get("vehicle_id")
+        booking_id = loc.get("booking_id")
+        
+        # Get vehicle info
+        vehicle_result = await db.execute(
+            select(models.Vehicle).where(models.Vehicle.id == UUID(vehicle_id))
+        )
+        vehicle = vehicle_result.scalar_one_or_none()
+        
+        # Get booking info if available
+        booking = None
+        driver = None
+        if booking_id:
+            booking_result = await db.execute(
+                select(models.VehicleBooking)
+                .where(models.VehicleBooking.id == UUID(booking_id))
+                .options(selectinload(models.VehicleBooking.driver))
+            )
+            booking = booking_result.scalar_one_or_none()
+            if booking:
+                driver = booking.driver
+        
+        enriched_locations.append({
+            "vehicle_id": vehicle_id,
+            "booking_id": booking_id,
+            "lat": loc.get("lat"),
+            "lng": loc.get("lng"),
+            "speed": loc.get("speed"),
+            "heading": loc.get("heading"),
+            "timestamp": loc.get("timestamp").isoformat() if loc.get("timestamp") else None,
+            "vehicle_plate": vehicle.plate_number if vehicle else None,
+            "vehicle_brand": vehicle.brand if vehicle else None,
+            "vehicle_model": vehicle.model if vehicle else None,
+            "vehicle_type": vehicle.vehicle_type if vehicle else None,
+            "driver_name": driver.name if driver else None,
+            "driver_phone": driver.phone if driver else None,
+            "destination": booking.destination if booking else None,
+            "origin_lat": booking.origin_lat if booking else None,
+            "origin_lng": booking.origin_lng if booking else None,
+            "destination_lat": booking.destination_lat if booking else None,
+            "destination_lng": booking.destination_lng if booking else None,
+            "purpose": booking.purpose.value if booking and booking.purpose else None
+        })
+    
+    return {"locations": enriched_locations, "count": len(enriched_locations)}
+
+
+@router.post("/seed-journey-data")
+async def seed_journey_data(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Seed 3 sample vehicles with journey data for testing"""
+    tenant_id = current_user.tenant_id
+    mongo_db = await get_mongo_db()
+    if not mongo_db:
+        raise HTTPException(status_code=500, detail="MongoDB not available")
+    
+    # Sample journey data (Jakarta area)
+    sample_journeys = [
+        {
+            "plate": "B 1234 ABC",
+            "brand": "Toyota",
+            "model": "Avanza",
+            "origin": {"lat": -6.2088, "lng": 106.8456, "address": "Monas, Jakarta"},
+            "destination": {"lat": -6.9175, "lng": 107.6191, "address": "Bandung City"},
+            "current": {"lat": -6.5631, "lng": 107.2319},  # Midpoint
+            "driver_name": "Budi Santoso",
+            "purpose": "BUSINESS_TRIP"
+        },
+        {
+            "plate": "B 5678 DEF",
+            "brand": "Honda",
+            "model": "CRV",
+            "origin": {"lat": -6.1751, "lng": 106.8650, "address": "Sunter, Jakarta"},
+            "destination": {"lat": -6.3005, "lng": 106.6346, "address": "BSD City, Tangerang"},
+            "current": {"lat": -6.2378, "lng": 106.7498},  # En route
+            "driver_name": "Ahmad Wijaya",
+            "purpose": "CLIENT_VISIT"
+        },
+        {
+            "plate": "B 9012 GHI",
+            "brand": "Mitsubishi",
+            "model": "L300",
+            "origin": {"lat": -6.2615, "lng": 106.7810, "address": "Senayan, Jakarta"},
+            "destination": {"lat": -6.2297, "lng": 106.9897, "address": "Cibubur, Bekasi"},
+            "current": {"lat": -6.2456, "lng": 106.8853},  # Halfway
+            "driver_name": "Dedi Kurniawan",
+            "purpose": "DELIVERY"
+        }
+    ]
+    
+    created_vehicles = []
+    for i, journey in enumerate(sample_journeys):
+        # Check if vehicle exists
+        existing = await db.execute(
+            select(models.Vehicle).where(
+                models.Vehicle.plate_number == journey["plate"],
+                models.Vehicle.tenant_id == tenant_id
+            )
+        )
+        vehicle = existing.scalar_one_or_none()
+        
+        if not vehicle:
+            # Create vehicle
+            count = await db.scalar(
+                select(func.count()).select_from(models.Vehicle)
+                .where(models.Vehicle.tenant_id == tenant_id)
+            )
+            vehicle = models.Vehicle(
+                tenant_id=tenant_id,
+                code=f"VH-{(count or 0) + 1:04d}",
+                plate_number=journey["plate"],
+                brand=journey["brand"],
+                model=journey["model"],
+                year=2023,
+                vehicle_type="SUV" if i == 1 else ("Van" if i == 2 else "MPV"),
+                status="IN_USE",
+                current_odometer=50000 + (i * 10000)
+            )
+            db.add(vehicle)
+            await db.flush()
+        
+        # Create or get driver
+        driver_result = await db.execute(
+            select(models.FleetDriver).where(
+                models.FleetDriver.name == journey["driver_name"],
+                models.FleetDriver.tenant_id == tenant_id
+            )
+        )
+        driver = driver_result.scalar_one_or_none()
+        
+        if not driver:
+            driver_count = await db.scalar(
+                select(func.count()).select_from(models.FleetDriver)
+                .where(models.FleetDriver.tenant_id == tenant_id)
+            )
+            driver = models.FleetDriver(
+                tenant_id=tenant_id,
+                code=f"DR-{(driver_count or 0) + 1:04d}",
+                name=journey["driver_name"],
+                phone=f"0812{1000000 + i:07d}",
+                license_number=f"SIM-{i+1:03d}",
+                license_type="A",
+                employment_status="Permanent"
+            )
+            db.add(driver)
+            await db.flush()
+        
+        # Create booking
+        today = date.today()
+        booking_count = await db.scalar(
+            select(func.count()).select_from(models.VehicleBooking)
+            .where(models.VehicleBooking.tenant_id == tenant_id)
+        )
+        booking = models.VehicleBooking(
+            tenant_id=tenant_id,
+            vehicle_id=vehicle.id,
+            driver_id=driver.id,
+            code=f"BK-{today.year}-{(booking_count or 0) + 1:04d}",
+            purpose=journey["purpose"],
+            origin_type="ADDRESS",
+            origin_address=journey["origin"]["address"],
+            origin_lat=journey["origin"]["lat"],
+            origin_lng=journey["origin"]["lng"],
+            destination=journey["destination"]["address"],
+            destination_lat=journey["destination"]["lat"],
+            destination_lng=journey["destination"]["lng"],
+            start_datetime=datetime.utcnow() - timedelta(hours=1),
+            end_datetime=datetime.utcnow() + timedelta(hours=3),
+            actual_start=datetime.utcnow() - timedelta(hours=1),
+            status="IN_USE",
+            requested_by=current_user.id,
+            approved_by=current_user.id,
+            approved_at=datetime.utcnow() - timedelta(hours=2)
+        )
+        db.add(booking)
+        await db.flush()
+        
+        # Store current position in MongoDB
+        collection = mongo_db["vehicle_locations"]
+        await collection.update_one(
+            {"vehicle_id": str(vehicle.id), "tenant_id": str(tenant_id)},
+            {"$set": {
+                "vehicle_id": str(vehicle.id),
+                "booking_id": str(booking.id),
+                "tenant_id": str(tenant_id),
+                "lat": journey["current"]["lat"],
+                "lng": journey["current"]["lng"],
+                "speed": 60 + (i * 10),
+                "heading": 90 + (i * 45),
+                "timestamp": datetime.utcnow(),
+                "updated_by": str(current_user.id)
+            }},
+            upsert=True
+        )
+        
+        created_vehicles.append({
+            "vehicle_id": str(vehicle.id),
+            "plate": vehicle.plate_number,
+            "booking_id": str(booking.id),
+            "driver": driver.name
+        })
+    
+    await db.commit()
+    
+    return {
+        "message": f"Created {len(created_vehicles)} sample vehicles with journeys",
+        "vehicles": created_vehicles
+    }
+
+
+@router.post("/simulate-journey/{vehicle_id}")
+async def simulate_journey(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Move a vehicle along its route (call this periodically to simulate movement)"""
+    mongo_db = await get_mongo_db()
+    if not mongo_db:
+        raise HTTPException(status_code=500, detail="MongoDB not available")
+    
+    tenant_id = str(current_user.tenant_id)
+    collection = mongo_db["vehicle_locations"]
+    
+    # Get current location
+    location = await collection.find_one({
+        "vehicle_id": str(vehicle_id),
+        "tenant_id": tenant_id
+    })
+    
+    if not location:
+        raise HTTPException(status_code=404, detail="Vehicle location not found")
+    
+    booking_id = location.get("booking_id")
+    if not booking_id:
+        raise HTTPException(status_code=400, detail="No active booking for this vehicle")
+    
+    # Get booking for destination
+    booking_result = await db.execute(
+        select(models.VehicleBooking).where(models.VehicleBooking.id == UUID(booking_id))
+    )
+    booking = booking_result.scalar_one_or_none()
+    
+    if not booking or not booking.destination_lat or not booking.destination_lng:
+        raise HTTPException(status_code=400, detail="Booking destination not set")
+    
+    # Calculate movement toward destination (10% of remaining distance)
+    current_lat = location.get("lat")
+    current_lng = location.get("lng")
+    dest_lat = booking.destination_lat
+    dest_lng = booking.destination_lng
+    
+    # Move 10% closer to destination
+    new_lat = current_lat + (dest_lat - current_lat) * 0.1
+    new_lng = current_lng + (dest_lng - current_lng) * 0.1
+    
+    # Check if arrived (within ~100m)
+    if abs(new_lat - dest_lat) < 0.001 and abs(new_lng - dest_lng) < 0.001:
+        new_lat = dest_lat
+        new_lng = dest_lng
+        arrived = True
+    else:
+        arrived = False
+    
+    # Update location
+    await collection.update_one(
+        {"vehicle_id": str(vehicle_id), "tenant_id": tenant_id},
+        {"$set": {
+            "lat": new_lat,
+            "lng": new_lng,
+            "speed": 0 if arrived else 55 + (hash(str(vehicle_id)) % 30),
+            "timestamp": datetime.utcnow()
+        }}
+    )
+    
+    # Save to history
+    history_collection = mongo_db["vehicle_location_history"]
+    await history_collection.insert_one({
+        "vehicle_id": str(vehicle_id),
+        "booking_id": booking_id,
+        "tenant_id": tenant_id,
+        "lat": new_lat,
+        "lng": new_lng,
+        "speed": 0 if arrived else 55,
+        "timestamp": datetime.utcnow(),
+        "created_at": datetime.utcnow()
+    })
+    
+    # If arrived, update booking status
+    if arrived:
+        booking.status = "COMPLETED"
+        booking.actual_end = datetime.utcnow()
+        
+        # Update vehicle status
+        vehicle_result = await db.execute(
+            select(models.Vehicle).where(models.Vehicle.id == vehicle_id)
+        )
+        vehicle = vehicle_result.scalar_one_or_none()
+        if vehicle:
+            vehicle.status = "AVAILABLE"
+        
+        await db.commit()
+    
+    return {
+        "vehicle_id": str(vehicle_id),
+        "new_position": {"lat": new_lat, "lng": new_lng},
+        "arrived": arrived,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@router.post("/simulate-all-journeys")
+async def simulate_all_journeys(
+    db: AsyncSession = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Move all vehicles with active journeys (call periodically)"""
+    mongo_db = await get_mongo_db()
+    if not mongo_db:
+        raise HTTPException(status_code=500, detail="MongoDB not available")
+    
+    tenant_id = str(current_user.tenant_id)
+    collection = mongo_db["vehicle_locations"]
+    
+    # Get all locations for this tenant
+    cursor = collection.find({"tenant_id": tenant_id})
+    locations = await cursor.to_list(length=100)
+    
+    updated = []
+    for location in locations:
+        booking_id = location.get("booking_id")
+        if not booking_id:
+            continue
+        
+        # Get booking
+        booking_result = await db.execute(
+            select(models.VehicleBooking).where(
+                models.VehicleBooking.id == UUID(booking_id),
+                models.VehicleBooking.status == "IN_USE"
+            )
+        )
+        booking = booking_result.scalar_one_or_none()
+        
+        if not booking or not booking.destination_lat or not booking.destination_lng:
+            continue
+        
+        # Calculate movement
+        current_lat = location.get("lat")
+        current_lng = location.get("lng")
+        dest_lat = booking.destination_lat
+        dest_lng = booking.destination_lng
+        
+        # Move 5% closer (slower for realistic movement)
+        new_lat = current_lat + (dest_lat - current_lat) * 0.05
+        new_lng = current_lng + (dest_lng - current_lng) * 0.05
+        
+        # Update location
+        await collection.update_one(
+            {"vehicle_id": location["vehicle_id"], "tenant_id": tenant_id},
+            {"$set": {
+                "lat": new_lat,
+                "lng": new_lng,
+                "speed": 50 + (hash(location["vehicle_id"]) % 40),
+                "timestamp": datetime.utcnow()
+            }}
+        )
+        
+        updated.append({
+            "vehicle_id": location["vehicle_id"],
+            "new_lat": new_lat,
+            "new_lng": new_lng
+        })
+    
+    return {"updated": len(updated), "vehicles": updated}

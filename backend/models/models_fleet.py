@@ -33,6 +33,7 @@ class VehicleCategory(str, enum.Enum):
 class BookingStatus(str, enum.Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
     IN_USE = "IN_USE"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
@@ -245,6 +246,9 @@ class VehicleBooking(Base):
     status = Column(Enum(BookingStatus), default=BookingStatus.PENDING)
     approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime, nullable=True)
+    rejected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    reject_reason = Column(Text, nullable=True)
     
     notes = Column(Text, nullable=True)
     
@@ -290,6 +294,7 @@ class VehicleFuelLog(Base):
     recorded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     notes = Column(Text, nullable=True)
     receipt_url = Column(String, nullable=False)  # Invoice upload required
+    invoice_number = Column(String, nullable=True)  # Extracted from OCR
     
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -391,6 +396,12 @@ class VehicleReminder(Base):
     remind_days_before = Column(Integer, default=30)  # Notify 30 days before
     is_notified = Column(Boolean, default=False)
     
+    # Additional fields
+    description = Column(Text, nullable=True)
+    estimated_cost = Column(Float, nullable=True)
+    reference_number = Column(String, nullable=True)  # STNK number, SIM number, etc.
+    document_url = Column(String, nullable=True)  # Uploaded document image
+    
     # Status
     is_completed = Column(Boolean, default=False)
     completed_at = Column(DateTime, nullable=True)
@@ -403,3 +414,61 @@ class VehicleReminder(Base):
     
     # Relationships
     vehicle = relationship("Vehicle", back_populates="reminders")
+
+
+# ==================== DOCUMENT TYPE ENUM ====================
+
+class DocumentType(str, enum.Enum):
+    MAINTENANCE_INVOICE = "MAINTENANCE_INVOICE"
+    EXPENSE_RECEIPT = "EXPENSE_RECEIPT"
+    FUEL_RECEIPT = "FUEL_RECEIPT"
+    STNK = "STNK"
+    DRIVER_LICENSE = "DRIVER_LICENSE"
+    KIR = "KIR"
+    INSURANCE = "INSURANCE"
+    OTHER = "OTHER"
+
+
+# ==================== FLEET INVOICES/DOCUMENTS ====================
+
+class FleetInvoice(Base):
+    """Shared table for extracted invoice and document data"""
+    __tablename__ = "fleet_invoices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    
+    # Document classification
+    document_type = Column(Enum(DocumentType), nullable=False)
+    source_table = Column(String, nullable=True)  # e.g. vehicle_maintenance_logs, vehicle_expenses
+    source_id = Column(UUID(as_uuid=True), nullable=True)  # FK to source record
+    
+    # File info
+    file_url = Column(String, nullable=False)
+    file_name = Column(String, nullable=True)
+    
+    # Extracted invoice data
+    invoice_number = Column(String, nullable=True)
+    vendor_name = Column(String, nullable=True)
+    invoice_date = Column(Date, nullable=True)
+    subtotal = Column(Float, nullable=True)
+    tax_amount = Column(Float, nullable=True)
+    total_amount = Column(Float, nullable=True)
+    currency = Column(String, default="IDR")
+    
+    # For STNK/License extraction
+    document_number = Column(String, nullable=True)  # STNK number, license number
+    expiry_date = Column(Date, nullable=True)
+    holder_name = Column(String, nullable=True)
+    
+    # Line items (stored as JSON array)
+    line_items = Column(Text, nullable=True)  # JSON array of items
+    
+    # Extraction metadata
+    raw_extracted_text = Column(Text, nullable=True)
+    extraction_confidence = Column(Float, nullable=True)  # 0-1
+    is_valid_document = Column(Boolean, default=True)
+    validation_message = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

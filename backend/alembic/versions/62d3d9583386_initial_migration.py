@@ -761,7 +761,7 @@ def upgrade() -> None:
     # Create Fleet enums
     op.execute("DO $$ BEGIN CREATE TYPE vehiclestatus AS ENUM ('AVAILABLE', 'IN_USE', 'MAINTENANCE', 'BROKEN', 'RETIRED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
     op.execute("DO $$ BEGIN CREATE TYPE vehiclecategory AS ENUM ('OPERATIONAL', 'LOGISTICS', 'RENTAL', 'EXECUTIVE', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
-    op.execute("DO $$ BEGIN CREATE TYPE bookingstatus AS ENUM ('PENDING', 'APPROVED', 'IN_USE', 'COMPLETED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE bookingstatus AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'IN_USE', 'COMPLETED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
     op.execute("DO $$ BEGIN CREATE TYPE bookingpurpose AS ENUM ('BUSINESS_TRIP', 'DELIVERY', 'CLIENT_VISIT', 'SITE_INSPECTION', 'PICKUP', 'EVENT', 'TRAINING', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
     op.execute("DO $$ BEGIN CREATE TYPE origintype AS ENUM ('WAREHOUSE', 'STORAGE_ZONE', 'MANUAL'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
     op.execute("DO $$ BEGIN CREATE TYPE fleetexpensecategory AS ENUM ('FUEL', 'TOLL', 'PARKING', 'SERVICE', 'TAX', 'INSURANCE', 'KIR', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
@@ -897,6 +897,9 @@ def upgrade() -> None:
             status bookingstatus DEFAULT 'PENDING',
             approved_by UUID REFERENCES users(id),
             approved_at TIMESTAMP,
+            rejected_by UUID REFERENCES users(id),
+            rejected_at TIMESTAMP,
+            reject_reason TEXT,
             notes TEXT,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -928,6 +931,7 @@ def upgrade() -> None:
             recorded_by UUID REFERENCES users(id),
             notes TEXT,
             receipt_url VARCHAR NOT NULL,
+            invoice_number VARCHAR,
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
@@ -993,8 +997,12 @@ def upgrade() -> None:
             vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
             reminder_type remindertype NOT NULL,
             title VARCHAR NOT NULL,
+            description TEXT,
             due_date DATE NOT NULL,
             remind_days_before INTEGER DEFAULT 30,
+            estimated_cost FLOAT,
+            reference_number VARCHAR,
+            document_url VARCHAR,
             is_notified BOOLEAN DEFAULT FALSE,
             is_completed BOOLEAN DEFAULT FALSE,
             completed_at TIMESTAMP,
@@ -1008,9 +1016,482 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_reminders_vehicle_id ON vehicle_reminders(vehicle_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_vehicle_reminders_due_date ON vehicle_reminders(due_date)")
 
+    # Create documenttype enum for fleet invoices
+    op.execute("DO $$ BEGIN CREATE TYPE documenttype AS ENUM ('MAINTENANCE_INVOICE', 'EXPENSE_RECEIPT', 'FUEL_RECEIPT', 'STNK', 'DRIVER_LICENSE', 'KIR', 'INSURANCE', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+
+    # Create fleet_invoices table for extracted document data
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS fleet_invoices (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            document_type documenttype NOT NULL,
+            source_table VARCHAR,
+            source_id UUID,
+            file_url VARCHAR NOT NULL,
+            file_name VARCHAR,
+            invoice_number VARCHAR,
+            vendor_name VARCHAR,
+            invoice_date DATE,
+            subtotal FLOAT,
+            tax_amount FLOAT,
+            total_amount FLOAT,
+            currency VARCHAR DEFAULT 'IDR',
+            document_number VARCHAR,
+            expiry_date DATE,
+            holder_name VARCHAR,
+            line_items TEXT,
+            raw_extracted_text TEXT,
+            extraction_confidence FLOAT,
+            is_valid_document BOOLEAN DEFAULT TRUE,
+            validation_message VARCHAR,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_fleet_invoices_tenant_id ON fleet_invoices(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_fleet_invoices_source ON fleet_invoices(source_table, source_id)")
+
+    # ==================== HR & PAYROLL MODULE ====================
+    
+    # Create HR enums
+    op.execute("DO $$ BEGIN CREATE TYPE employeestatus AS ENUM ('ACTIVE', 'INACTIVE', 'ON_LEAVE', 'TERMINATED', 'PROBATION'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE contracttype AS ENUM ('PERMANENT', 'CONTRACT', 'PROBATION', 'INTERNSHIP', 'PART_TIME'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE gender AS ENUM ('MALE', 'FEMALE', 'OTHER'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE maritalstatus AS ENUM ('SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE attendancestatus AS ENUM ('PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'ON_LEAVE', 'HOLIDAY', 'WEEKEND'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE checkinmethod AS ENUM ('FACE', 'FINGERPRINT', 'MANUAL', 'QR_CODE', 'MOBILE'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE leavestatus AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE payrollstatus AS ENUM ('DRAFT', 'CALCULATED', 'APPROVED', 'PAID', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE cameratype AS ENUM ('WEBCAM', 'CCTV', 'IP_CAMERA', 'USB_CAMERA'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+    op.execute("DO $$ BEGIN CREATE TYPE activitytype AS ENUM ('WORKING', 'IDLE', 'AWAY', 'MEETING', 'BREAK'); EXCEPTION WHEN duplicate_object THEN null; END $$;")
+
+    # Create hr_departments table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS hr_departments (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            code VARCHAR(20) NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            manager_id UUID REFERENCES users(id),
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_hr_departments_tenant_id ON hr_departments(tenant_id)")
+
+    # Create hr_positions table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS hr_positions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            code VARCHAR(20) NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            department_id UUID REFERENCES hr_departments(id),
+            level INTEGER DEFAULT 1,
+            base_salary FLOAT DEFAULT 0.0,
+            min_salary FLOAT,
+            max_salary FLOAT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_hr_positions_tenant_id ON hr_positions(tenant_id)")
+
+    # Create employees table (enhanced)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_code VARCHAR(20) NOT NULL UNIQUE,
+            first_name VARCHAR(100) NOT NULL,
+            last_name VARCHAR(100) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            phone VARCHAR(20),
+            nik VARCHAR(20),
+            npwp VARCHAR(30),
+            birth_date DATE,
+            birth_place VARCHAR(100),
+            gender gender,
+            marital_status maritalstatus,
+            religion VARCHAR(50),
+            blood_type VARCHAR(5),
+            address TEXT,
+            city VARCHAR(100),
+            province VARCHAR(100),
+            postal_code VARCHAR(10),
+            profile_photo_url VARCHAR(500),
+            id_card_photo_url VARCHAR(500),
+            face_encoding TEXT,
+            fingerprint_data TEXT,
+            department_id UUID REFERENCES hr_departments(id),
+            position_id UUID REFERENCES hr_positions(id),
+            manager_id UUID REFERENCES employees(id),
+            hire_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            termination_date DATE,
+            contract_type contracttype DEFAULT 'PERMANENT',
+            contract_start DATE,
+            contract_end DATE,
+            status employeestatus DEFAULT 'ACTIVE',
+            base_salary FLOAT DEFAULT 0.0,
+            bank_name VARCHAR(100),
+            bank_account VARCHAR(50),
+            bank_account_name VARCHAR(100),
+            bpjs_kesehatan VARCHAR(30),
+            bpjs_ketenagakerjaan VARCHAR(30),
+            emergency_contact_name VARCHAR(100),
+            emergency_contact_phone VARCHAR(20),
+            emergency_contact_relation VARCHAR(50),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employees_tenant_id ON employees(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employees_employee_code ON employees(employee_code)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employees_email ON employees(email)")
+
+    # hr_departments manager_id already references users(id) directly in table creation
+
+    # Create employee_documents table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS employee_documents (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            document_type VARCHAR(50) NOT NULL,
+            document_name VARCHAR(255) NOT NULL,
+            file_url VARCHAR(500) NOT NULL,
+            expiry_date DATE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            uploaded_by UUID REFERENCES users(id)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employee_documents_employee_id ON employee_documents(employee_id)")
+
+    # Create hr_shifts table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS hr_shifts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name VARCHAR(50) NOT NULL,
+            code VARCHAR(10) NOT NULL,
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            break_start TIME,
+            break_end TIME,
+            late_tolerance_minutes INTEGER DEFAULT 15,
+            early_leave_tolerance INTEGER DEFAULT 15,
+            is_overnight BOOLEAN DEFAULT FALSE,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_hr_shifts_tenant_id ON hr_shifts(tenant_id)")
+
+    # Create employee_schedules table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS employee_schedules (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            shift_id UUID NOT NULL REFERENCES hr_shifts(id),
+            date DATE NOT NULL,
+            is_holiday BOOLEAN DEFAULT FALSE,
+            notes VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employee_schedules_employee_id ON employee_schedules(employee_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employee_schedules_date ON employee_schedules(date)")
+
+    # Create attendances table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS attendances (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            date DATE NOT NULL,
+            shift_id UUID REFERENCES hr_shifts(id),
+            check_in TIMESTAMP,
+            check_in_method checkinmethod DEFAULT 'MANUAL',
+            check_in_photo_url VARCHAR(500),
+            check_in_location VARCHAR(255),
+            check_in_device VARCHAR(100),
+            check_out TIMESTAMP,
+            check_out_method checkinmethod,
+            check_out_photo_url VARCHAR(500),
+            check_out_location VARCHAR(255),
+            check_out_device VARCHAR(100),
+            status attendancestatus DEFAULT 'ABSENT',
+            late_minutes INTEGER DEFAULT 0,
+            early_leave_minutes INTEGER DEFAULT 0,
+            overtime_minutes INTEGER DEFAULT 0,
+            work_hours FLOAT DEFAULT 0.0,
+            notes TEXT,
+            approved_by UUID REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_attendances_tenant_id ON attendances(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_attendances_employee_id ON attendances(employee_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_attendances_date ON attendances(date)")
+
+    # Create leave_types table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS leave_types (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name VARCHAR(50) NOT NULL,
+            code VARCHAR(10) NOT NULL,
+            annual_quota INTEGER DEFAULT 12,
+            is_paid BOOLEAN DEFAULT TRUE,
+            requires_document BOOLEAN DEFAULT FALSE,
+            max_consecutive_days INTEGER,
+            color VARCHAR(7) DEFAULT '#3B82F6',
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leave_types_tenant_id ON leave_types(tenant_id)")
+
+    # Create leave_balances table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS leave_balances (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            leave_type_id UUID NOT NULL REFERENCES leave_types(id),
+            year INTEGER NOT NULL,
+            quota INTEGER DEFAULT 0,
+            used INTEGER DEFAULT 0,
+            carried_forward INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leave_balances_employee_id ON leave_balances(employee_id)")
+
+    # Create leave_requests table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS leave_requests (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            leave_type_id UUID NOT NULL REFERENCES leave_types(id),
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            total_days INTEGER NOT NULL,
+            reason TEXT,
+            attachment_url VARCHAR(500),
+            status leavestatus DEFAULT 'PENDING',
+            approver_id UUID REFERENCES users(id),
+            approved_at TIMESTAMP,
+            rejection_reason TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leave_requests_employee_id ON leave_requests(employee_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_leave_requests_status ON leave_requests(status)")
+
+    # Create salary_components table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS salary_components (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            code VARCHAR(20) NOT NULL,
+            component_type VARCHAR(20) NOT NULL,
+            is_taxable BOOLEAN DEFAULT TRUE,
+            is_fixed BOOLEAN DEFAULT TRUE,
+            default_amount FLOAT DEFAULT 0.0,
+            calculation_formula TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_salary_components_tenant_id ON salary_components(tenant_id)")
+
+    # Create employee_salary_components table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS employee_salary_components (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            component_id UUID NOT NULL REFERENCES salary_components(id),
+            amount FLOAT NOT NULL,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_employee_salary_components_employee_id ON employee_salary_components(employee_id)")
+
+    # Create payroll_periods table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS payroll_periods (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name VARCHAR(50),
+            period_month INTEGER NOT NULL,
+            period_year INTEGER NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            payment_date DATE,
+            status payrollstatus DEFAULT 'DRAFT',
+            is_closed BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payroll_periods_tenant_id ON payroll_periods(tenant_id)")
+
+    # Create payroll_runs table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS payroll_runs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            payroll_period_id UUID REFERENCES payroll_periods(id),
+            run_date TIMESTAMP DEFAULT NOW(),
+            run_by UUID REFERENCES users(id),
+            status payrollstatus DEFAULT 'DRAFT',
+            total_employees INTEGER DEFAULT 0,
+            total_gross FLOAT DEFAULT 0.0,
+            total_deductions FLOAT DEFAULT 0.0,
+            total_net FLOAT DEFAULT 0.0,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payroll_runs_tenant_id ON payroll_runs(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payroll_runs_period_id ON payroll_runs(payroll_period_id)")
+
+    # Create payslips table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS payslips (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            payroll_run_id UUID REFERENCES payroll_runs(id),
+            employee_id UUID REFERENCES employees(id),
+            base_salary FLOAT DEFAULT 0.0,
+            allowances FLOAT DEFAULT 0.0,
+            overtime_pay FLOAT DEFAULT 0.0,
+            bonus FLOAT DEFAULT 0.0,
+            gross_pay FLOAT DEFAULT 0.0,
+            tax_deduction FLOAT DEFAULT 0.0,
+            bpjs_kes_deduction FLOAT DEFAULT 0.0,
+            bpjs_tk_deduction FLOAT DEFAULT 0.0,
+            other_deductions FLOAT DEFAULT 0.0,
+            total_deductions FLOAT DEFAULT 0.0,
+            net_pay FLOAT DEFAULT 0.0,
+            earnings_detail JSONB,
+            deductions_detail JSONB,
+            is_paid BOOLEAN DEFAULT FALSE,
+            paid_at TIMESTAMP,
+            payment_method VARCHAR(50),
+            payment_reference VARCHAR(100),
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payslips_tenant_id ON payslips(tenant_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_payslips_employee_id ON payslips(employee_id)")
+
+    # Create hr_kpis table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS hr_kpis (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            period_year INTEGER NOT NULL,
+            period_quarter INTEGER,
+            metric_name VARCHAR(200) NOT NULL,
+            metric_description TEXT,
+            target_value FLOAT NOT NULL,
+            actual_value FLOAT,
+            weight FLOAT DEFAULT 1.0,
+            unit VARCHAR(20),
+            score FLOAT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_hr_kpis_employee_id ON hr_kpis(employee_id)")
+
+    # Create performance_reviews table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS performance_reviews (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+            reviewer_id UUID NOT NULL REFERENCES users(id),
+            period_year INTEGER NOT NULL,
+            period_type VARCHAR(20) NOT NULL,
+            kpi_score FLOAT,
+            competency_score FLOAT,
+            overall_score FLOAT,
+            rating VARCHAR(20),
+            strengths TEXT,
+            areas_for_improvement TEXT,
+            goals_next_period TEXT,
+            employee_feedback TEXT,
+            status VARCHAR(20) DEFAULT 'DRAFT',
+            submitted_at TIMESTAMP,
+            acknowledged_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_performance_reviews_employee_id ON performance_reviews(employee_id)")
+
+    # Create office_cameras table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS office_cameras (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            location VARCHAR(200),
+            description TEXT,
+            camera_type cameratype DEFAULT 'WEBCAM',
+            stream_url VARCHAR(500),
+            device_id VARCHAR(100),
+            is_active BOOLEAN DEFAULT TRUE,
+            is_ai_enabled BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_office_cameras_tenant_id ON office_cameras(tenant_id)")
+
+    # Create camera_activities table
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS camera_activities (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            camera_id UUID NOT NULL REFERENCES office_cameras(id) ON DELETE CASCADE,
+            timestamp TIMESTAMP DEFAULT NOW(),
+            activity_type activitytype,
+            employee_detected_id UUID REFERENCES employees(id),
+            people_count INTEGER DEFAULT 0,
+            snapshot_url VARCHAR(500),
+            confidence_score FLOAT,
+            activity_metadata JSONB,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_camera_activities_camera_id ON camera_activities(camera_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_camera_activities_timestamp ON camera_activities(timestamp)")
+
 
 def downgrade() -> None:
     # Drop Fleet module tables first (reverse order of creation)
+    op.execute("DROP TABLE IF EXISTS fleet_invoices")
+    op.execute("DROP TYPE IF EXISTS documenttype")
     op.execute("DROP TABLE IF EXISTS vehicle_reminders")
     op.execute("DROP TABLE IF EXISTS vehicle_expenses")
     op.execute("DROP TABLE IF EXISTS vehicle_maintenance_logs")

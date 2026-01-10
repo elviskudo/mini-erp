@@ -3,9 +3,12 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h2 class="text-xl font-bold">Vehicles</h2>
-        <p class="text-gray-500">Manage your fleet vehicles</p>
+        <p class="text-gray-500 text-small">Manage your fleet vehicles</p>
       </div>
       <div class="flex gap-2">
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }" :disabled="vehicles.length === 0">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" :disabled="vehicles.length === 0">Export</UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchVehicles">Refresh</UButton>
         <UButton icon="i-heroicons-plus" @click="openCreate">Add Vehicle</UButton>
       </div>
@@ -176,6 +179,12 @@ const statusOptions = [
   { label: 'Retired', value: 'RETIRED' }
 ]
 
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
+
 const form = reactive({
   plate_number: '', brand: '', model: '', year: null as number | null, color: '',
   vehicle_type: 'Car', category: 'OPERATIONAL', capacity: '', fuel_type: 'Gasoline',
@@ -267,6 +276,48 @@ const formatStatus = (status: string) => {
     AVAILABLE: 'Available', IN_USE: 'In Use', MAINTENANCE: 'Maintenance', BROKEN: 'Broken', RETIRED: 'Retired'
   }
   return labels[status] || status
+}
+
+const formatCurrency = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val || 0)
+
+const exportData = (format: string) => {
+  const data = vehicles.value.map((v: any) => ({
+    'Code': v.code || '',
+    'Plate Number': v.plate_number,
+    'Brand': v.brand,
+    'Model': v.model,
+    'Year': v.year || '',
+    'Type': v.vehicle_type || '',
+    'Category': v.category || '',
+    'Status': formatStatus(v.status),
+    'Odometer': v.current_odometer || 0,
+    'Purchase Cost': v.purchase_cost || 0
+  }))
+  
+  if (format === 'csv' || format === 'xls') {
+    const headers = Object.keys(data[0] || {})
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map((row: any) => headers.map(h => `"${row[h] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `vehicles.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `Vehicles exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Vehicles</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:12px;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Fleet Vehicles Report</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map((row: any) => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
+  }
 }
 
 onMounted(() => {

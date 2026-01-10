@@ -3,9 +3,12 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h2 class="text-xl font-bold">Vehicle Bookings</h2>
-        <p class="text-gray-500">Schedule and manage vehicle usage</p>
+        <p class="text-gray-500 text-small">Schedule and manage vehicle usage</p>
       </div>
       <div class="flex gap-2">
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }" :disabled="bookings.length === 0">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" :disabled="bookings.length === 0">Export</UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchBookings">Refresh</UButton>
         <UButton icon="i-heroicons-building-office-2" variant="outline" @click="showDepartmentModal = true">Departments</UButton>
         <UButton icon="i-heroicons-user-group" variant="outline" @click="showDriverModal = true">Drivers</UButton>
@@ -45,6 +48,7 @@
         <template #actions-data="{ row }">
           <div class="flex gap-1">
             <UButton v-if="row.status === 'PENDING'" size="xs" icon="i-heroicons-check" variant="ghost" color="green" @click="approveBooking(row)" title="Approve" />
+            <UButton v-if="row.status === 'PENDING'" size="xs" icon="i-heroicons-x-mark" variant="ghost" color="red" @click="openRejectModal(row)" title="Reject" />
             <UButton size="xs" icon="i-heroicons-pencil" variant="ghost" @click="openEdit(row)" />
             <UButton size="xs" icon="i-heroicons-trash" variant="ghost" color="red" @click="deleteBooking(row)" />
           </div>
@@ -54,11 +58,13 @@
 
     <!-- Create/Edit Booking Slideover -->
     <FormSlideover v-model="isSlideoverOpen" :title="editingBooking ? 'Edit Booking' : 'New Booking'" :loading="saving" @submit="saveBooking" size="lg">
-      <UFormGroup label="Vehicle" required hint="Select the vehicle to book">
+      <UFormGroup label="Vehicle" required>
+        <p class="text-small text-gray-500 mb-1">Select the vehicle to book</p>
         <USelect v-model="form.vehicle_id" :options="vehicleOptions" placeholder="Select vehicle..." />
       </UFormGroup>
 
-      <UFormGroup label="Purpose" required hint="Reason for booking">
+      <UFormGroup label="Purpose" required>
+        <p class="text-small text-gray-500 mb-1">Reason for booking</p>
         <USelect v-model="form.purpose" :options="purposeOptions" />
       </UFormGroup>
 
@@ -249,6 +255,29 @@
         </div>
       </UCard>
     </UModal>
+
+    <!-- Reject Booking Modal -->
+    <UModal v-model="showRejectModal">
+      <UCard>
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-red-600">Reject Booking</h3>
+            <UButton icon="i-heroicons-x-mark" variant="ghost" @click="showRejectModal = false" />
+          </div>
+        </template>
+        <div class="space-y-4">
+          <p class="text-small text-gray-600">Are you sure you want to reject booking <strong>{{ rejectingBooking?.code }}</strong>?</p>
+          <UFormGroup label="Rejection Reason" required>
+            <p class="text-small text-gray-500 mb-1">Provide a reason for rejecting this booking</p>
+            <UTextarea v-model="rejectReason" :rows="3" placeholder="e.g. Vehicle not available, conflicting schedule, etc." />
+          </UFormGroup>
+          <div class="flex justify-end gap-2">
+            <UButton variant="outline" @click="showRejectModal = false">Cancel</UButton>
+            <UButton color="red" @click="rejectBooking" :loading="rejecting">Reject Booking</UButton>
+          </div>
+        </div>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
@@ -271,6 +300,12 @@ const drivers = ref<any[]>([])
 const showDepartmentModal = ref(false)
 const showDriverModal = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+// Rejection
+const showRejectModal = ref(false)
+const rejectingBooking = ref<any>(null)
+const rejectReason = ref('')
+const rejecting = ref(false)
 
 // Department form
 const editingDept = ref<any>(null)
@@ -308,6 +343,7 @@ const purposeOptions = [
 const statusOptions = [
   { label: 'Pending', value: 'PENDING' },
   { label: 'Approved', value: 'APPROVED' },
+  { label: 'Rejected', value: 'REJECTED' },
   { label: 'In Use', value: 'IN_USE' },
   { label: 'Completed', value: 'COMPLETED' },
   { label: 'Cancelled', value: 'CANCELLED' }
@@ -325,6 +361,12 @@ const licenseOptions = [
   { label: 'SIM B2 - Trailer/Tank', value: 'B2' },
   { label: 'SIM C - Motorcycle', value: 'C' }
 ]
+
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
 
 const vehicleOptions = computed(() => 
   vehicles.value.map((v: any) => ({ label: `${v.plate_number} - ${v.brand} ${v.model}`, value: v.id }))
@@ -448,6 +490,31 @@ const approveBooking = async (booking: any) => {
     toast.add({ title: 'Booking approved!' })
     fetchBookings()
   } catch (e) { toast.add({ title: 'Error', color: 'red' }) }
+}
+
+const openRejectModal = (booking: any) => {
+  rejectingBooking.value = booking
+  rejectReason.value = ''
+  showRejectModal.value = true
+}
+
+const rejectBooking = async () => {
+  if (!rejectReason.value.trim()) return toast.add({ title: 'Rejection reason is required', color: 'red' })
+  
+  rejecting.value = true
+  try {
+    await $api.put(`/fleet/bookings/${rejectingBooking.value.id}`, { 
+      status: 'REJECTED',
+      reject_reason: rejectReason.value
+    })
+    toast.add({ title: 'Booking rejected', color: 'orange' })
+    showRejectModal.value = false
+    fetchBookings()
+  } catch (e: any) { 
+    toast.add({ title: 'Error', description: e.response?.data?.detail, color: 'red' }) 
+  } finally {
+    rejecting.value = false
+  }
 }
 
 const deleteBooking = async (booking: any) => {
@@ -619,10 +686,49 @@ const uploadFile = async (file: File) => {
   }
 }
 
-const getStatusColor = (s: string) => ({ PENDING: 'yellow', APPROVED: 'blue', IN_USE: 'green', COMPLETED: 'gray', CANCELLED: 'red' })[s] || 'gray'
+const getStatusColor = (s: string) => ({ PENDING: 'yellow', APPROVED: 'blue', REJECTED: 'red', IN_USE: 'green', COMPLETED: 'gray', CANCELLED: 'gray' })[s] || 'gray'
 const getPurposeColor = (p: string) => ({ BUSINESS_TRIP: 'blue', DELIVERY: 'orange', CLIENT_VISIT: 'green', SITE_INSPECTION: 'purple' })[p] || 'gray'
 const formatPurpose = (p: string) => ({ BUSINESS_TRIP: 'Business Trip', DELIVERY: 'Delivery', CLIENT_VISIT: 'Client Visit', SITE_INSPECTION: 'Site Inspection', PICKUP: 'Pickup', EVENT: 'Event', TRAINING: 'Training', OTHER: 'Other' })[p] || p
 const formatDate = (dt: string) => dt ? new Date(dt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }) : '-'
+
+const exportData = (format: string) => {
+  const data = bookings.value.map((b: any) => ({
+    'Code': b.code || '',
+    'Vehicle': getVehicleName(b.vehicle_id),
+    'Purpose': formatPurpose(b.purpose),
+    'Department': getDepartmentName(b.department_id),
+    'Driver': getDriverName(b.driver_id),
+    'Destination': b.destination || '',
+    'Start': formatDate(b.start_datetime),
+    'End': formatDate(b.end_datetime),
+    'Status': b.status
+  }))
+  
+  if (format === 'csv' || format === 'xls') {
+    const headers = Object.keys(data[0] || {})
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map((row: any) => headers.map(h => `"${row[h] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `bookings.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `Bookings exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Bookings</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:12px;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Vehicle Bookings Report</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map((row: any) => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
+  }
+}
 
 onMounted(() => {
   fetchBookings()

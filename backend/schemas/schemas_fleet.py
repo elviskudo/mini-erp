@@ -30,6 +30,7 @@ class VehicleCategory(str, Enum):
 class BookingStatus(str, Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
     IN_USE = "IN_USE"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
@@ -312,6 +313,8 @@ class BookingUpdate(BaseModel):
     actual_start: Optional[datetime] = None
     actual_end: Optional[datetime] = None
     department_id: Optional[UUID] = None
+    driver_id: Optional[UUID] = None
+    reject_reason: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -348,6 +351,9 @@ class BookingResponse(BaseModel):
     project_id: Optional[str] = None
     approved_by: Optional[UUID] = None
     approved_at: Optional[datetime] = None
+    rejected_by: Optional[UUID] = None
+    rejected_at: Optional[datetime] = None
+    reject_reason: Optional[str] = None
     notes: Optional[str] = None
     created_at: datetime
     
@@ -374,6 +380,7 @@ class FuelLogCreate(FuelLogBase):
     vehicle_id: UUID
     driver_id: Optional[UUID] = None
     receipt_url: str  # Required
+    invoice_number: Optional[str] = None
 
 
 class FuelLogUpdate(BaseModel):
@@ -387,6 +394,7 @@ class FuelLogUpdate(BaseModel):
     lng: Optional[float] = None
     driver_id: Optional[UUID] = None
     receipt_url: Optional[str] = None
+    invoice_number: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -408,6 +416,7 @@ class FuelLogResponse(BaseModel):
     fuel_efficiency: Optional[float] = None
     recorded_by: Optional[UUID] = None
     receipt_url: str
+    invoice_number: Optional[str] = None
     notes: Optional[str] = None
     created_at: datetime
     
@@ -516,8 +525,12 @@ class ExpenseResponse(ExpenseBase):
 class ReminderBase(BaseModel):
     reminder_type: ReminderType
     title: str
+    description: Optional[str] = None
     due_date: date
     remind_days_before: int = 30
+    estimated_cost: Optional[float] = None
+    reference_number: Optional[str] = None
+    document_url: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -526,22 +539,37 @@ class ReminderCreate(ReminderBase):
 
 
 class ReminderUpdate(BaseModel):
+    reminder_type: Optional[ReminderType] = None
     title: Optional[str] = None
+    description: Optional[str] = None
     due_date: Optional[date] = None
     remind_days_before: Optional[int] = None
+    estimated_cost: Optional[float] = None
+    reference_number: Optional[str] = None
+    document_url: Optional[str] = None
     is_completed: Optional[bool] = None
     notes: Optional[str] = None
 
 
-class ReminderResponse(ReminderBase):
+class ReminderResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     vehicle_id: UUID
+    reminder_type: ReminderType
+    title: str
+    description: Optional[str] = None
+    due_date: date
+    remind_days_before: int
+    estimated_cost: Optional[float] = None
+    reference_number: Optional[str] = None
+    document_url: Optional[str] = None
     is_notified: bool
     is_completed: bool
     completed_at: Optional[datetime] = None
     completed_by: Optional[UUID] = None
+    notes: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

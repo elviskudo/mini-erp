@@ -220,12 +220,32 @@ const getChildPopupStyle = (label: string) => {
   return { top: '0px', left: '0px', zIndex: 10001 }
 }
 
-const calculatePosition = (el: HTMLElement) => {
+const calculatePosition = (el: HTMLElement, menuLabel?: string) => {
   const rect = el.getBoundingClientRect()
-  return {
-    top: rect.top,
-    left: rect.right + 4 // 4px gap
+  const viewportHeight = window.innerHeight
+  
+  // Estimate menu height based on children count (roughly 40px per item + padding)
+  // Find the menu item to get children count
+  let estimatedMenuHeight = 200 // default estimate
+  if (menuLabel) {
+    const menuItem = props.items.find(item => item.label === menuLabel)
+    if (menuItem?.children) {
+      estimatedMenuHeight = menuItem.children.length * 40 + 16 // 40px per item + 16px padding
+    }
   }
+  
+  let top = rect.top
+  const left = rect.right + 4 // 4px gap
+  
+  // Check if menu would overflow bottom of viewport
+  if (top + estimatedMenuHeight > viewportHeight) {
+    // Adjust so bottom of menu aligns with bottom of viewport (with 8px margin)
+    top = viewportHeight - estimatedMenuHeight - 8
+    // Ensure top doesn't go above viewport
+    if (top < 8) top = 8
+  }
+  
+  return { top, left }
 }
 
 const toggleMenu = (label: string, event: Event) => {
@@ -234,7 +254,7 @@ const toggleMenu = (label: string, event: Event) => {
   } else {
     const el = menuRefs.value[label]
     if (el) {
-      menuPositions.value[label] = calculatePosition(el)
+      menuPositions.value[label] = calculatePosition(el, label)
     }
     openMenu.value = label
   }
@@ -249,7 +269,7 @@ const handleMouseEnter = (label: string, event: Event) => {
   // Calculate position based on the menu item
   const el = menuRefs.value[label]
   if (el) {
-    menuPositions.value[label] = calculatePosition(el)
+    menuPositions.value[label] = calculatePosition(el, label)
   }
   
   openMenu.value = label
@@ -276,10 +296,30 @@ const handleChildMouseEnter = (label: string, event: Event) => {
   const el = childMenuRefs.value[label]
   if (el) {
     const rect = el.getBoundingClientRect()
-    childMenuPositions.value[label] = {
-      top: rect.top,
-      left: rect.right + 4
+    const viewportHeight = window.innerHeight
+    
+    // Find child item to estimate menu height
+    let estimatedMenuHeight = 150
+    for (const menuItem of props.items) {
+      if (menuItem.children) {
+        const childItem = menuItem.children.find(c => c.label === label)
+        if (childItem?.children) {
+          estimatedMenuHeight = childItem.children.length * 40 + 16
+          break
+        }
+      }
     }
+    
+    let top = rect.top
+    const left = rect.right + 4
+    
+    // Check if menu would overflow bottom of viewport
+    if (top + estimatedMenuHeight > viewportHeight) {
+      top = viewportHeight - estimatedMenuHeight - 8
+      if (top < 8) top = 8
+    }
+    
+    childMenuPositions.value[label] = { top, left }
   }
   
   openChildMenu.value = label

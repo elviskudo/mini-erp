@@ -222,8 +222,13 @@ async def seed_menus(db):
         {"code": "finance.reports", "label": "Reports", "path": "/finance/reports", "parent_code": "finance", "sort_order": 3},
         {"code": "finance.assets", "label": "Fixed Assets", "path": "/finance/assets", "parent_code": "finance", "sort_order": 4},
         # HR children
-        {"code": "hr.employees", "label": "Employees", "path": "/hr/employees", "parent_code": "hr", "sort_order": 1},
-        {"code": "hr.payroll", "label": "Payroll Run", "path": "/hr/payroll", "parent_code": "hr", "sort_order": 2},
+        {"code": "hr.dashboard", "label": "Dashboard", "path": "/hr", "parent_code": "hr", "sort_order": 1},
+        {"code": "hr.employees", "label": "Employees", "path": "/hr/employees", "parent_code": "hr", "sort_order": 2},
+        {"code": "hr.organization", "label": "Organization", "path": "/hr/organization", "parent_code": "hr", "sort_order": 3},
+        {"code": "hr.attendance", "label": "Attendance", "path": "/hr/attendance", "parent_code": "hr", "sort_order": 4},
+        {"code": "hr.leave", "label": "Leave", "path": "/hr/leave", "parent_code": "hr", "sort_order": 5},
+        {"code": "hr.leaderboards", "label": "Leaderboards", "path": "/hr/leaderboards", "parent_code": "hr", "sort_order": 6},
+        {"code": "hr.payroll", "label": "Payroll", "path": "/hr/payroll", "parent_code": "hr", "sort_order": 7},
         # Logistics children
         {"code": "logistics.delivery", "label": "Delivery Orders", "path": "/logistics/delivery", "parent_code": "logistics", "sort_order": 1},
         {"code": "logistics.transfers", "label": "Stock Transfers", "path": "/logistics/transfers", "parent_code": "logistics", "sort_order": 2},

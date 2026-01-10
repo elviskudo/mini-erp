@@ -2,7 +2,8 @@
 // This fixes the duplicate Transfer-Encoding header issue with nitro proxy
 
 export default defineEventHandler(async (event) => {
-    const path = getRequestURL(event).pathname
+    const requestUrl = getRequestURL(event)
+    const path = requestUrl.pathname
 
     // Only handle /api routes, but EXCLUDE internal Nuxt paths like /_nuxt_icon
     if (!path.startsWith('/api/') || path.startsWith('/api/_nuxt')) {
@@ -11,7 +12,9 @@ export default defineEventHandler(async (event) => {
 
     const backendUrl = 'http://backend_api:8000'
     const targetPath = path.replace('/api/', '/')
-    const targetUrl = `${backendUrl}${targetPath}`
+    // Include query params in the target URL
+    const queryString = requestUrl.search || ''
+    const targetUrl = `${backendUrl}${targetPath}${queryString}`
 
     // Get request method and body
     const method = event.method

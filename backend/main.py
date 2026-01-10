@@ -6,9 +6,10 @@ from routers import (
     auth, manufacturing, iot, mrp, qc, inventory, 
     procurement, receiving, issuance, opname, delivery, logistics,
     finance, hr, crm, projects, maintenance, fleet, ecommerce, compliance,
-    ap, ar, subscription, upload, tenants, saas, menu, users, dashboard, export, settings,
-    pos
+    ap, ar, sales, subscription, upload, tenants, saas, menu, users, dashboard, export, settings,
+    pos, config
 )
+
 from middleware import AuditMiddleware
 from connections.mongodb import connect_to_mongo, close_mongo_connection
 from consumers.finance_consumer import start_finance_consumer
@@ -62,6 +63,7 @@ app.include_router(logistics.router)
 app.include_router(finance.router)
 app.include_router(ap.router)
 app.include_router(ar.router)
+app.include_router(sales.router)
 app.include_router(hr.router)
 app.include_router(crm.router)
 app.include_router(projects.router)
@@ -79,6 +81,8 @@ app.include_router(dashboard.router)
 app.include_router(export.router)
 app.include_router(settings.router)
 app.include_router(pos.router)
+app.include_router(config.router)
+
 
 @app.get("/")
 def read_root():

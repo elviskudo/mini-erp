@@ -13,6 +13,9 @@ from .models_delivery import *
 from .models_logistics import *
 from .models_finance import *
 from .models_ap import *
+from .models_ar import *
+from .models_tax import *
+from .models_banking import *
 from .models_hr import *
 from .models_sales import *
 from .models_crm import *
@@ -23,4 +26,5 @@ from .models_qms import *
 from .models_pos import *
 from .models_saas import Tenant, TenantMember, MemberRole, SubscriptionTier
 from .models_menu import Menu, RoleMenuPermission
+
 

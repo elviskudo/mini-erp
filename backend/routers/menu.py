@@ -116,14 +116,53 @@ def get_hardcoded_menus(user_role: str) -> list:
             {"label": "Reminders", "to": "/fleet/reminders"}
         ]},
         {"label": "HR & Payroll", "icon": "i-heroicons-user-group", "children": [
+            {"label": "Dashboard", "to": "/hr"},
             {"label": "Employees", "to": "/hr/employees"},
-            {"label": "Payroll Run", "to": "/hr/payroll"}
+            {"label": "Organization", "to": "/hr/organization"},
+            {"label": "Attendance", "to": "/hr/attendance"},
+            {"label": "Leave", "to": "/hr/leave"},
+            {"label": "Leaderboards", "to": "/hr/leaderboards"},
+            {"label": "Payroll", "to": "/hr/payroll"}
         ]},
         {"label": "Finance", "icon": "i-heroicons-banknotes", "children": [
+            {"label": "Dashboard", "to": "/finance"},
             {"label": "Chart of Accounts", "to": "/finance/coa"},
             {"label": "General Ledger", "to": "/finance/gl"},
-            {"label": "Reports", "to": "/finance/reports"},
-            {"label": "Fixed Assets", "to": "/finance/assets"}
+            {"label": "Accounts Payable", "children": [
+                {"label": "Vendor Bills", "to": "/finance/ap/bills"},
+                {"label": "Payments", "to": "/finance/ap/payments"},
+                {"label": "Aging Report", "to": "/finance/ap/aging"}
+            ]},
+            {"label": "Accounts Receivable", "children": [
+                {"label": "Invoices", "to": "/finance/ar/invoices"},
+                {"label": "Receipts", "to": "/finance/ar/receipts"},
+                {"label": "Aging Report", "to": "/finance/ar/aging"}
+            ]},
+            {"label": "Bank & Cash", "children": [
+                {"label": "Bank Accounts", "to": "/finance/banking/accounts"},
+                {"label": "Transactions", "to": "/finance/banking/transactions"},
+                {"label": "Reconciliation", "to": "/finance/banking/reconciliation"},
+                {"label": "Petty Cash", "to": "/finance/banking/petty-cash"}
+            ]},
+            {"label": "Taxes", "children": [
+                {"label": "Tax Configuration", "to": "/finance/tax/config"},
+                {"label": "PPN/VAT", "to": "/finance/tax/ppn"},
+                {"label": "Withholding Tax", "to": "/finance/tax/withholding"},
+                {"label": "e-Faktur", "to": "/finance/tax/efaktur"}
+            ]},
+            {"label": "Fixed Assets", "to": "/finance/assets"},
+            {"label": "Budgeting", "children": [
+                {"label": "Budgets", "to": "/finance/budget"},
+                {"label": "Budget vs Actual", "to": "/finance/budget/variance"}
+            ]},
+            {"label": "Cost Centers", "to": "/finance/cost-centers"},
+            {"label": "Reports", "children": [
+                {"label": "Trial Balance", "to": "/finance/reports/trial-balance"},
+                {"label": "Profit & Loss", "to": "/finance/reports/pl"},
+                {"label": "Balance Sheet", "to": "/finance/reports/balance-sheet"},
+                {"label": "Cash Flow", "to": "/finance/reports/cash-flow"},
+                {"label": "General Ledger", "to": "/finance/reports/gl"}
+            ]}
         ]},
         {"label": "B2B Portal", "icon": "i-heroicons-building-storefront", "to": "/portal/shop"},
         {"label": "Compliance", "icon": "i-heroicons-shield-check", "to": "/compliance"},

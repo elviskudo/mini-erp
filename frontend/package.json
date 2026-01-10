@@ -10,19 +10,29 @@
         "postinstall": "nuxt prepare"
     },
     "dependencies": {
+        "@fingerprintjs/fingerprintjs": "^5.0.1",
         "@pinia/nuxt": "^0.11.3",
+        "@types/file-saver": "^2.0.7",
         "@vueup/vue-quill": "^1.2.0",
         "axios": "^1.13.2",
+        "chart.js": "^4.5.1",
+        "face-api.js": "^0.22.2",
+        "file-saver": "^2.0.5",
+        "flatpickr": "^4.6.13",
         "jsbarcode": "^3.12.1",
+        "jspdf": "^4.0.0",
         "jwt-decode": "^4.0.0",
         "leaflet": "^1.9.4",
         "nuxt": "^3.13.0",
         "pinia": "^3.0.4",
         "qrcode": "^1.5.4",
         "socket.io-client": "^4.8.1",
+        "tesseract.js": "^7.0.0",
         "vue": "^3.3.0",
+        "vue-flatpickr-component": "^12.0.0",
         "vue-quill-editor": "^3.0.6",
-        "vue-router": "^4.0.0"
+        "vue-router": "^4.0.0",
+        "xlsx": "^0.18.5"
     },
     "devDependencies": {
         "@iconify-json/feather": "^1.2.1",

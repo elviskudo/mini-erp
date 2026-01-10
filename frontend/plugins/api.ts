@@ -29,6 +29,11 @@ export default defineNuxtPlugin((nuxtApp) => {
             config.headers['X-Tenant-ID'] = authStore.tenantId
         }
 
+        // Remove Content-Type for FormData to let axios/browser set it automatically with boundary
+        if (config.data instanceof FormData) {
+            delete config.headers['Content-Type']
+        }
+
         return config
     })
 

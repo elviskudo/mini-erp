@@ -3,9 +3,12 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
         <h2 class="text-xl font-bold">Fuel Logs</h2>
-        <p class="text-gray-500">Track fuel purchases and consumption</p>
+        <p class="text-gray-500 text-small">Track fuel purchases and consumption</p>
       </div>
       <div class="flex gap-2">
+        <UDropdown :items="exportOptions" :popper="{ placement: 'bottom-end' }" :disabled="fuelLogs.length === 0">
+          <UButton icon="i-heroicons-arrow-down-tray" variant="outline" size="sm" :disabled="fuelLogs.length === 0">Export</UButton>
+        </UDropdown>
         <UButton icon="i-heroicons-arrow-path" variant="ghost" @click="fetchFuelLogs">Refresh</UButton>
         <UButton icon="i-heroicons-user-group" variant="outline" @click="showDriverModal = true">Drivers</UButton>
         <UButton icon="i-heroicons-plus" @click="openCreate">Add Fuel Log</UButton>
@@ -78,11 +81,13 @@
 
     <!-- Create/Edit Fuel Log Slideover -->
     <FormSlideover v-model="isSlideoverOpen" :title="editingLog ? 'Edit Fuel Log' : 'Add Fuel Log'" :loading="saving" @submit="saveFuelLog" size="lg">
-      <UFormGroup label="Vehicle" required hint="Select vehicle being refueled">
+      <UFormGroup label="Vehicle" required>
+        <p class="text-small text-gray-500 mb-1">Select vehicle being refueled</p>
         <USelect v-model="form.vehicle_id" :options="vehicleOptions" placeholder="Select vehicle..." />
       </UFormGroup>
 
-      <UFormGroup label="Driver" hint="Driver who refueled (optional)">
+      <UFormGroup label="Driver">
+        <p class="text-small text-gray-500 mb-1">Driver who refueled (optional)</p>
         <USelect v-model="form.driver_id" :options="driverOptions" placeholder="Select driver..." />
       </UFormGroup>
 
@@ -253,6 +258,12 @@ const fuelTypeOptions = [
   { label: 'Solar', value: 'Solar' },
   { label: 'Gasoline', value: 'Gasoline' }
 ]
+
+const exportOptions = [[
+  { label: 'Export as CSV', icon: 'i-heroicons-table-cells', click: () => exportData('csv') },
+  { label: 'Export as Excel', icon: 'i-heroicons-document-text', click: () => exportData('xls') },
+  { label: 'Export as PDF', icon: 'i-heroicons-document', click: () => exportData('pdf') }
+]]
 
 const employmentOptions = [
   { label: 'Permanent', value: 'PERMANENT' },
@@ -467,6 +478,46 @@ const deleteDriver = async (driver: any) => {
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val || 0)
 const formatDate = (dt: string) => dt ? new Date(dt).toLocaleDateString('id-ID', { dateStyle: 'medium' }) : '-'
+
+const exportData = (format: string) => {
+  const data = fuelLogs.value.map((l: any) => ({
+    'Vehicle': getVehicleName(l.vehicle_id),
+    'Driver': getDriverName(l.driver_id),
+    'Date': formatDate(l.date),
+    'Fuel Type': l.fuel_type || '',
+    'Liters': l.liters || 0,
+    'Price/L': l.price_per_liter || 0,
+    'Total Cost': l.total_cost || 0,
+    'Odometer': l.odometer || 0,
+    'Efficiency': l.fuel_efficiency ? `${l.fuel_efficiency.toFixed(1)} km/L` : '',
+    'Station': l.gas_station || ''
+  }))
+  
+  if (format === 'csv' || format === 'xls') {
+    const headers = Object.keys(data[0] || {})
+    const separator = format === 'csv' ? ',' : '\t'
+    const content = [headers.join(separator), ...data.map((row: any) => headers.map(h => `"${row[h] || ''}"`).join(separator))].join('\n')
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/vnd.ms-excel' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `fuel_logs.${format === 'csv' ? 'csv' : 'xls'}`; a.click()
+    toast.add({ title: 'Exported', description: `Fuel logs exported as ${format.toUpperCase()}`, color: 'green' })
+  } else if (format === 'pdf') {
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html><head><title>Fuel Logs</title>
+        <style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:12px;} th{background:#f4f4f4;}</style>
+        </head><body>
+        <h1>Fuel Logs Report</h1>
+        <p>Exported: ${new Date().toLocaleDateString()}</p>
+        <table><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr>
+        ${data.map((row: any) => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+        </table></body></html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+    }
+  }
+}
 
 onMounted(() => {
   fetchFuelLogs()

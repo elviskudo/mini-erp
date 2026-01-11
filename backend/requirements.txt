@@ -20,3 +20,9 @@ python-multipart
 stripe
 openpyxl
 reportlab
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+aiosqlite

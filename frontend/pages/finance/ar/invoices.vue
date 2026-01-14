@@ -211,12 +211,28 @@ const invoiceTotal = computed(() => form.items.reduce((sum, item) => sum + (item
 
 const filteredInvoices = computed(() => {
   let result = invoices.value
+  // Search filter
   if (search.value) {
     const s = search.value.toLowerCase()
     result = result.filter((inv: any) => inv.invoice_number?.toLowerCase().includes(s) || inv.customer_name?.toLowerCase().includes(s))
   }
-  if (statusFilter.value) result = result.filter((inv: any) => inv.status === statusFilter.value)
-  if (customerFilter.value) result = result.filter((inv: any) => inv.customer_id === customerFilter.value)
+  // Status filter
+  const status = typeof statusFilter.value === 'object' ? statusFilter.value?.value : statusFilter.value
+  if (status) result = result.filter((inv: any) => inv.status === status)
+  // Customer filter
+  const customerId = typeof customerFilter.value === 'object' ? customerFilter.value?.value : customerFilter.value
+  if (customerId) result = result.filter((inv: any) => inv.customer_id === customerId)
+  // Client-side date range filter (also server-side in fetchInvoices)
+  if (dateRange.value && dateRange.value.length === 2) {
+    const [startDate, endDate] = dateRange.value
+    if (startDate && endDate) {
+      result = result.filter((inv: any) => {
+        const invDate = (inv.invoice_date || inv.date)?.split('T')[0]
+        if (!invDate) return false
+        return invDate >= startDate && invDate <= endDate
+      })
+    }
+  }
   return result
 })
 

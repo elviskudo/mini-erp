@@ -151,7 +151,28 @@ const replenishForm = reactive({ date: '', amount: 0, source_account_id: '', des
 
 const filteredTransactions = computed(() => {
   let result = transactions.value
-  if (search.value) result = result.filter((t: any) => t.description?.toLowerCase().includes(search.value.toLowerCase()))
+  // Search filter - search in multiple fields
+  if (search.value) {
+    const s = search.value.toLowerCase()
+    result = result.filter((t: any) => 
+      t.description?.toLowerCase().includes(s) ||
+      t.category?.toLowerCase().includes(s) ||
+      t.type?.toLowerCase().includes(s) ||
+      t.requested_by?.toLowerCase().includes(s) ||
+      t.transaction_number?.toLowerCase().includes(s)
+    )
+  }
+  // Date range filter
+  if (dateRange.value && dateRange.value.length === 2) {
+    const [startDate, endDate] = dateRange.value
+    if (startDate && endDate) {
+      result = result.filter((t: any) => {
+        if (!t.date) return false
+        const tDate = t.date.split('T')[0]
+        return tDate >= startDate && tDate <= endDate
+      })
+    }
+  }
   return result
 })
 
@@ -166,7 +187,23 @@ const formatCurrencyCompact = (amount: number) => `Rp ${formatCompact(amount)}`
 
 const fetchTransactions = async () => {
   loading.value = true
-  try { const res = await $api.get('/finance/banking/petty-cash'); transactions.value = res.data; currentBalance.value = res.data.balance || 5000000 }
+  try { 
+    const res = await $api.get('/finance/banking/petty-cash')
+    // API returns { balance, transactions: [] }
+    transactions.value = res.data.transactions || []
+    currentBalance.value = res.data.balance || 0
+    // Calculate monthly expenses
+    const now = new Date()
+    const thisMonth = transactions.value.filter((t: any) => {
+      if (!t.date || t.type !== 'expense') return false
+      const tDate = new Date(t.date)
+      return tDate.getMonth() === now.getMonth() && tDate.getFullYear() === now.getFullYear()
+    })
+    monthlyExpenses.value = thisMonth.reduce((sum: number, t: any) => sum + (t.amount || 0), 0)
+    // Get last replenishment
+    const lastRep = transactions.value.find((t: any) => t.type === 'replenishment')
+    lastReplenishment.value = lastRep?.amount || 0
+  }
   catch {
     transactions.value = [
       { id: '1', date: '2026-01-07', type: 'expense', category: 'Office Supplies', description: 'Printer Paper', amount: 150000, requested_by: 'Admin' },

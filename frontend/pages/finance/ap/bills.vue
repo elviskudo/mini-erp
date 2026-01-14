@@ -186,6 +186,7 @@ const form = reactive({
 // Computed
 const filteredBills = computed(() => {
   let result = bills.value
+  // Search filter
   if (search.value) {
     const s = search.value.toLowerCase()
     result = result.filter((b: any) => 
@@ -193,11 +194,26 @@ const filteredBills = computed(() => {
       b.vendor_name?.toLowerCase().includes(s)
     )
   }
-  if (statusFilter.value) {
-    result = result.filter((b: any) => b.status === statusFilter.value)
+  // Status filter
+  const status = typeof statusFilter.value === 'object' ? statusFilter.value?.value : statusFilter.value
+  if (status) {
+    result = result.filter((b: any) => b.status === status)
   }
-  if (vendorFilter.value) {
-    result = result.filter((b: any) => b.vendor_id === vendorFilter.value)
+  // Vendor filter
+  const vendorId = typeof vendorFilter.value === 'object' ? vendorFilter.value?.value : vendorFilter.value
+  if (vendorId) {
+    result = result.filter((b: any) => b.vendor_id === vendorId)
+  }
+  // Date range filter
+  if (dateRange.value && dateRange.value.length === 2) {
+    const [startDate, endDate] = dateRange.value
+    if (startDate && endDate) {
+      result = result.filter((b: any) => {
+        if (!b.date) return false
+        const bDate = b.date.split('T')[0]
+        return bDate >= startDate && bDate <= endDate
+      })
+    }
   }
   return result
 })

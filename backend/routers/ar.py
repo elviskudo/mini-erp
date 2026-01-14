@@ -515,3 +515,118 @@ async def create_receipt(
             "status": "completed",
             "message": f"Receipt recorded (fallback: {str(e)[:50]})"
         }
+
+
+# ===== AR AGING REPORT =====
+
+@router.get("/aging")
+async def get_aging_report(
+    as_of_date: Optional[str] = None,
+    db: AsyncSession = Depends(database.get_db)
+):
+    """
+    Generate AR Aging Report with buckets and customer breakdown.
+    Calculates invoice aging based on due_date vs as_of_date.
+    """
+    # Parse as_of_date or use today
+    if as_of_date:
+        try:
+            report_date = datetime.fromisoformat(as_of_date)
+        except ValueError:
+            report_date = datetime.utcnow()
+    else:
+        report_date = datetime.utcnow()
+    
+    # Get all unpaid invoices (not Paid, not Void)
+    query = select(models.SalesInvoice).where(
+        models.SalesInvoice.tenant_id == DEFAULT_TENANT_ID,
+        models.SalesInvoice.status.notin_(["Paid", "Void", "Cancelled"])
+    ).options(selectinload(models.SalesInvoice.customer))
+    
+    result = await db.execute(query)
+    invoices = result.scalars().all()
+    
+    # Initialize buckets
+    bucket_current = {"label": "Current", "amount": 0, "count": 0}
+    bucket_1_30 = {"label": "1-30 Days", "amount": 0, "count": 0}
+    bucket_31_60 = {"label": "31-60 Days", "amount": 0, "count": 0}
+    bucket_61_90 = {"label": "61-90 Days", "amount": 0, "count": 0}
+    bucket_over_90 = {"label": "> 90 Days", "amount": 0, "count": 0}
+    
+    # Customer breakdown dict
+    customer_data = {}
+    
+    for inv in invoices:
+        # Calculate days overdue
+        due_date = inv.due_date or inv.date
+        if due_date:
+            if hasattr(due_date, 'date'):
+                due_dt = due_date
+            else:
+                due_dt = datetime.fromisoformat(str(due_date)) if isinstance(due_date, str) else due_date
+            days_overdue = (report_date - due_dt).days
+        else:
+            days_overdue = 0
+        
+        amount = inv.total_amount or 0
+        customer_id = str(inv.customer_id) if inv.customer_id else "unknown"
+        customer_name = inv.customer.name if inv.customer else "Unknown Customer"
+        
+        # Assign to bucket
+        if days_overdue <= 0:
+            bucket_current["amount"] += amount
+            bucket_current["count"] += 1
+            bucket_key = "current"
+        elif days_overdue <= 30:
+            bucket_1_30["amount"] += amount
+            bucket_1_30["count"] += 1
+            bucket_key = "days_1_30"
+        elif days_overdue <= 60:
+            bucket_31_60["amount"] += amount
+            bucket_31_60["count"] += 1
+            bucket_key = "days_31_60"
+        elif days_overdue <= 90:
+            bucket_61_90["amount"] += amount
+            bucket_61_90["count"] += 1
+            bucket_key = "days_61_90"
+        else:
+            bucket_over_90["amount"] += amount
+            bucket_over_90["count"] += 1
+            bucket_key = "over_90"
+        
+        # Aggregate by customer
+        if customer_id not in customer_data:
+            customer_data[customer_id] = {
+                "customer": customer_name,
+                "current": 0,
+                "days_1_30": 0,
+                "days_31_60": 0,
+                "days_61_90": 0,
+                "over_90": 0,
+                "total": 0
+            }
+        
+        customer_data[customer_id][bucket_key] += amount
+        customer_data[customer_id]["total"] += amount
+    
+    # Calculate total
+    total_outstanding = (
+        bucket_current["amount"] + 
+        bucket_1_30["amount"] + 
+        bucket_31_60["amount"] + 
+        bucket_61_90["amount"] + 
+        bucket_over_90["amount"]
+    )
+    
+    return {
+        "buckets": [
+            bucket_current,
+            bucket_1_30,
+            bucket_31_60,
+            bucket_61_90,
+            bucket_over_90
+        ],
+        "customers": list(customer_data.values()),
+        "total": total_outstanding,
+        "as_of_date": report_date.isoformat()
+    }

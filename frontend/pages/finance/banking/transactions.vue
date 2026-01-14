@@ -21,7 +21,7 @@
         </div>
         <div class="w-48">
           <label class="block text-xs font-medium text-gray-600 mb-1">Account</label>
-          <USelectMenu v-model="selectedAccount" :options="accountOptions" size="sm" />
+          <USelectMenu v-model="selectedAccount" :options="accountOptions" option-attribute="label" value-attribute="value" size="sm" />
         </div>
         <div class="flex-1">
           <label class="block text-xs font-medium text-gray-600 mb-1">Search</label>
@@ -125,8 +125,30 @@ const form = reactive({ bank_account_id: '', transaction_date: '', transaction_t
 
 const filteredTransactions = computed(() => {
   let result = transactions.value
-  if (selectedAccount.value) result = result.filter((t: any) => t.bank_account_id === selectedAccount.value)
-  if (search.value) { const s = search.value.toLowerCase(); result = result.filter((t: any) => t.reference_number?.toLowerCase().includes(s) || t.description?.toLowerCase().includes(s)) }
+  // Account filter
+  const accountId = typeof selectedAccount.value === 'object' ? selectedAccount.value?.value : selectedAccount.value
+  if (accountId) result = result.filter((t: any) => t.bank_account_id === accountId)
+  // Date range filter
+  if (dateRange.value && dateRange.value.length === 2) {
+    const [startDate, endDate] = dateRange.value
+    if (startDate && endDate) {
+      result = result.filter((t: any) => {
+        if (!t.transaction_date) return false
+        const tDate = t.transaction_date.split('T')[0]
+        return tDate >= startDate && tDate <= endDate
+      })
+    }
+  }
+  // Search filter
+  if (search.value) {
+    const s = search.value.toLowerCase()
+    result = result.filter((t: any) => 
+      t.reference_number?.toLowerCase().includes(s) || 
+      t.description?.toLowerCase().includes(s) ||
+      t.transaction_number?.toLowerCase().includes(s) ||
+      t.counterparty_name?.toLowerCase().includes(s)
+    )
+  }
   return result
 })
 

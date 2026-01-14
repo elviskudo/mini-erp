@@ -124,6 +124,7 @@ const form = reactive({ customer_id: '', invoice_id: '', payment_date: '', amoun
 
 const filteredReceipts = computed(() => {
   let result = receipts.value
+  // Search filter
   if (search.value) { 
     const s = search.value.toLowerCase()
     result = result.filter((r: any) => 
@@ -132,7 +133,22 @@ const filteredReceipts = computed(() => {
       r.payment_method?.toLowerCase().includes(s)
     )
   }
-  if (customerFilter.value) result = result.filter((r: any) => r.customer_id === customerFilter.value)
+  // Customer filter
+  const customerId = typeof customerFilter.value === 'object' ? customerFilter.value?.value : customerFilter.value
+  if (customerId) {
+    result = result.filter((r: any) => r.customer_id === customerId)
+  }
+  // Date range filter
+  if (dateRange.value && dateRange.value.length === 2) {
+    const [startDate, endDate] = dateRange.value
+    if (startDate && endDate) {
+      result = result.filter((r: any) => {
+        if (!r.payment_date) return false
+        const rDate = r.payment_date.split('T')[0]
+        return rDate >= startDate && rDate <= endDate
+      })
+    }
+  }
   return result
 })
 

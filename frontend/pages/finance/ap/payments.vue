@@ -156,6 +156,7 @@ const form = reactive({
 
 const filteredPayments = computed(() => {
   let result = payments.value
+  // Search filter
   if (search.value) {
     const s = search.value.toLowerCase()
     result = result.filter((p: any) => 
@@ -164,8 +165,21 @@ const filteredPayments = computed(() => {
       p.vendor_name?.toLowerCase().includes(s)
     )
   }
-  if (vendorFilter.value) {
-    result = result.filter((p: any) => p.vendor_id === vendorFilter.value)
+  // Vendor filter
+  const vendorId = typeof vendorFilter.value === 'object' ? vendorFilter.value?.value : vendorFilter.value
+  if (vendorId) {
+    result = result.filter((p: any) => p.vendor_id === vendorId)
+  }
+  // Date range filter
+  if (dateRange.value && dateRange.value.length === 2) {
+    const [startDate, endDate] = dateRange.value
+    if (startDate && endDate) {
+      result = result.filter((p: any) => {
+        if (!p.payment_date) return false
+        const pDate = p.payment_date.split('T')[0]
+        return pDate >= startDate && pDate <= endDate
+      })
+    }
   }
   return result
 })

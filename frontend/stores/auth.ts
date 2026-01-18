@@ -26,12 +26,21 @@ interface Tenant {
     date_format?: string
 }
 
+interface TenantWithRole {
+    id: string
+    name: string
+    slug?: string
+    role: string
+    is_active: boolean
+}
+
 export const useAuthStore = defineStore('auth', {
     state: () => ({
         token: null as string | null,
         user: null as User | null,
         tenantId: null as string | null,
         tenant: null as Tenant | null,
+        userTenants: [] as TenantWithRole[],
         isAuthenticated: false
     }),
     actions: {
@@ -85,6 +94,41 @@ export const useAuthStore = defineStore('auth', {
                 }
             } catch (e) {
                 console.error('Failed to load tenant settings:', e)
+            }
+        },
+        async fetchUserTenants(): Promise<TenantWithRole[]> {
+            try {
+                const { $api } = useNuxtApp()
+                const res = await $api.get('/auth/user-tenants')
+                if (res.data?.data) {
+                    this.userTenants = res.data.data
+                    return res.data.data
+                }
+                return []
+            } catch (e) {
+                console.error('Failed to fetch user tenants:', e)
+                return []
+            }
+        },
+        async switchTenant(tenantId: string): Promise<boolean> {
+            try {
+                const { $api } = useNuxtApp()
+                const res = await $api.post('/auth/switch-tenant', { tenant_id: tenantId })
+                if (res.data?.success && res.data?.data?.token) {
+                    this.setToken(res.data.data.token.access_token)
+                    // Set tenant from response
+                    if (res.data.data.tenant) {
+                        this.setTenant({
+                            id: res.data.data.tenant.id,
+                            name: res.data.data.tenant.name
+                        })
+                    }
+                    return true
+                }
+                return false
+            } catch (e) {
+                console.error('Failed to switch tenant:', e)
+                return false
             }
         },
         logout() {

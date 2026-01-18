@@ -98,12 +98,13 @@
 
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
-
+// Menu state
 const authStore = useAuthStore()
 
 // Initialize auth from cookie on layout mount
 onMounted(() => {
   authStore.initialize()
+  fetchMenus()
 })
 
 const route = useRoute()
@@ -127,58 +128,30 @@ const userInitials = computed(() => {
     return name.substring(0, 2).toUpperCase()
 })
 
-// Menu state - fetched from API
-const links = ref<any[]>([])
-const menuLoading = ref(true)
+// Menu state
+const links = ref([])
 
-// Fallback menus while loading
-const fallbackLinks = [
-  { label: 'Dashboard', icon: 'i-heroicons-home', to: '/' }
-]
-
-// Fetch menus from API
 const fetchMenus = async () => {
-  menuLoading.value = true
-  try {
-    // Use token from auth store (which was initialized from cookie)
-    const token = authStore.token
-    if (!token) {
-      links.value = fallbackLinks
-      return
+    try {
+        const { $api } = useNuxtApp()
+        const response = await $api.get('/menus')
+        if (response.data && response.data.data) {
+            links.value = response.data.data
+        } else if (Array.isArray(response.data)) {
+            // Fallback for non-standard responses
+            links.value = response.data
+        }
+    } catch (e) {
+        console.error('Failed to fetch menus:', e)
+        links.value = []
     }
-    const response = await $fetch<any[]>('/api/menus', {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-    links.value = response
-  } catch (e: any) {
-    console.error('Failed to fetch menus:', e)
-    // If 401 (token expired), logout and redirect to login
-    if (e?.response?.status === 401 || e?.statusCode === 401) {
-      authStore.logout()
-      return
-    }
-    // Use fallback on error
-    links.value = fallbackLinks
-  } finally {
-    menuLoading.value = false
-  }
 }
-
-// Fetch menus on mount and when auth changes
-watch(() => authStore.isAuthenticated, (isAuth) => {
-  if (isAuth) {
-    fetchMenus()
-  }
-}, { immediate: true })
 
 const logout = () => {
     authStore.logout()
 }
 
-// Notification Logic
-import { io } from "socket.io-client";
+// Notification Logic (socket.io loaded dynamically)
 const toast = useToast()
 const notifications = ref<any[]>([])
 const unreadCount = computed(() => notifications.value.length)
@@ -188,51 +161,66 @@ const clearNotifications = () => {
 }
 
 onMounted(() => {
-    // Connect to Realtime Server with auth info for tenant/user rooms
-    const socket = io("http://localhost:3001", {
-        auth: {
-            tenantId: authStore.user?.tenant_id,
-            userId: authStore.user?.id
-        },
-        query: {
-            tenant_id: authStore.user?.tenant_id,
-            user_id: authStore.user?.id
-        }
-    });
-    
-    socket.on("connect", () => {
-        console.log("Connected to Realtime Server. Socket ID:", socket.id);
-    });
-    
-    socket.on("connect_error", (error) => {
-        console.warn("Realtime server connection error:", error.message);
-    });
-    
-    socket.on("notification", (payload: any) => {
-        console.log("Notification received:", payload);
-        notifications.value.unshift(payload);
+    // Lazy connect to Realtime Server - non-blocking with short timeout
+    const connectSocket = async () => {
+        // Only try to connect if on client side and user is authenticated
+        if (!authStore.isAuthenticated || typeof window === 'undefined') return;
         
-        // Determine icon based on notification type
-        let icon = 'i-heroicons-bell';
-        let color = 'primary';
-        if (payload.type === 'success') {
-            icon = 'i-heroicons-check-circle';
-            color = 'green';
-        } else if (payload.type === 'error') {
-            icon = 'i-heroicons-x-circle';
-            color = 'red';
-        } else if (payload.type === 'warning') {
-            icon = 'i-heroicons-exclamation-triangle';
-            color = 'yellow';
+        try {
+            const { io } = await import("socket.io-client");
+            const socket = io("http://localhost:3001", {
+                auth: {
+                    tenantId: authStore.user?.tenant_id,
+                    userId: authStore.user?.id
+                },
+                query: {
+                    tenant_id: authStore.user?.tenant_id,
+                    user_id: authStore.user?.id
+                },
+                // Short timeout to prevent blocking
+                timeout: 3000,
+                reconnectionAttempts: 2
+            });
+            
+            socket.on("connect", () => {
+                console.log("Connected to Realtime Server. Socket ID:", socket.id);
+            });
+            
+            socket.on("connect_error", (error) => {
+                console.warn("Realtime server unavailable - notifications disabled");
+                socket.disconnect();
+            });
+            
+            socket.on("notification", (payload: any) => {
+                notifications.value.unshift(payload);
+                
+                let icon = 'i-heroicons-bell';
+                let color = 'primary';
+                if (payload.type === 'success') {
+                    icon = 'i-heroicons-check-circle';
+                    color = 'green';
+                } else if (payload.type === 'error') {
+                    icon = 'i-heroicons-x-circle';
+                    color = 'red';
+                } else if (payload.type === 'warning') {
+                    icon = 'i-heroicons-exclamation-triangle';
+                    color = 'yellow';
+                }
+                
+                toast.add({
+                    title: payload.title,
+                    description: payload.message,
+                    icon: icon,
+                    color: color,
+                    timeout: 5000
+                });
+            });
+        } catch (e) {
+            console.warn("Socket.io not available - notifications disabled");
         }
-        
-        toast.add({
-            title: payload.title,
-            description: payload.message,
-            icon: icon,
-            color: color,
-            timeout: 5000
-        });
-    });
+    };
+    
+    // Connect socket lazily after initial render
+    setTimeout(connectSocket, 1000);
 })
 </script>

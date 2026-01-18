@@ -1,0 +1,40 @@
+# ML Service Requirements - All FREE libraries
+
+# Core
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+
+# Face Recognition
+face_recognition  # dlib-based (FREE)
+# deepface        # Alternative (FREE)
+
+# Computer Vision
+opencv-python
+opencv-python-headless
+numpy
+Pillow
+
+# OCR
+easyocr           # FREE, supports 80+ languages
+# pytesseract     # Alternative (requires tesseract-ocr)
+
+# Object Detection
+ultralytics       # YOLOv8 (FREE)
+
+# Fingerprint (experimental)
+# scikit-image    # For fingerprint enhancement
+
+# Kafka Integration
+kafka-python
+aiokafka
+
+# Redis
+redis
+aioredis
+
+# Utilities
+python-dotenv
+httpx
+aiofiles

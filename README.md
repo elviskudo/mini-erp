@@ -22,31 +22,69 @@ A modern, full-stack ERP system built with efficiency and scalability in mind. D
 - **Maintenance** - Asset management, work orders, schedules
 - **POS** - Point of Sale system with customer credit, promos, transactions
 
-### 🆕 Recent Updates (December 2025)
+### 🆕 Recent Updates (January 2026)
 
-#### Frontend Improvements
-- **HTTPS API Proxy** - Custom server middleware proxies `/api/*` to backend, fixing `Transfer-Encoding` header issues
-- **Heroicons Fix** - Excluded `/_nuxt*` paths from proxy to load icons correctly
-- **Shimmer Loading** - Replaced spinners with animated skeleton loading for better UX
-- **Route Params Fix** - Fixed SSR issues with dynamic route parameters using `computed()`
+#### Go Microservices Architecture Migration
+The system has been migrated from Python FastAPI to a **Go-based microservices architecture**:
 
-#### Backend Updates
-- **Maintenance Submenu** - Added child menus: Assets, Work Orders, Schedules
-- **Hardcoded Menu Fallback** - Updated `get_hardcoded_menus()` with complete menu structure
+| Service | Port | Technology |
+|---------|------|------------|
+| **API Gateway** | 8000 | Go + Gin |
+| **Auth Service** | 8010 | Go + Gin + JWT |
+| **Finance Service** | 8011 | Go + Gin |
+| **HR Service** | 8012 | Go + Gin |
+| **Inventory Service** | 8013 | Go + Gin |
+| **Manufacturing Service** | 8014 | Go + Gin |
+| **Fleet Service** | 8015 | Go + Gin |
+| **CRM Service** | 8016 | Go + Gin |
+| **Projects Service** | 8017 | Go + Gin |
+| **Procurement Service** | 8018 | Go + Gin |
+| **Logistics Service** | 8019 | Go + Gin |
+| **Maintenance Service** | 8020 | Go + Gin |
+| **POS Service** | 8021 | Go + Gin |
 
-#### Technical Notes for Developers
-```typescript
-// Frontend runs with Bun (not npm/yarn)
-docker compose exec frontend_web bun install
-
-// API calls use custom proxy middleware
-// Location: frontend/server/middleware/api-proxy.ts
-// Excludes: /api/_nuxt* (for internal Nuxt routes like icons)
-
-// Dynamic route params in pages should use computed()
-const projectId = computed(() => route.params.id as string)
-// NOT: const projectId = route.params.id (undefined during SSR)
+#### Phase 4.6: Standardized JSON Response & Pagination ✅
+All API endpoints now return a standardized JSON format:
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "Data retrieved successfully",
+  "data": [...],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total_items": 87,
+      "total_pages": 9,
+      "has_next": true,
+      "has_prev": false
+    }
+  },
+  "errors": null,
+  "timestamp": "2026-01-16T10:30:45Z",
+  "request_id": "req_8f92c1a7"
+}
 ```
+
+#### JSON Truncation Fix
+- Fixed frontend `api-proxy.ts` returning raw response text to prevent Nuxt re-serialization truncation
+- All API responses now return complete JSON through frontend proxy
+
+#### Work Centers CRUD Fixed
+- **Create**: UUID auto-generation with `gen_random_uuid()`, tenant_id from header
+- **Update**: Partial updates with db.Save(), status toggle (is_active) working
+- **Delete**: Proper database deletion with existence verification
+
+#### Performance Improvements
+- Dockerfile switched from dev mode (`bun run dev`) to production mode (`bun run build` + `bun run preview`)
+- Warm request time: **0.24s** (down from 20s cold start)
+- Socket.io lazy loaded with 3s timeout to prevent blocking
+
+#### Frontend Enhancements
+- **ServerDataTable.vue** - New component for server-side pagination
+- **useApi.ts** - Composable for standardized API calls with pagination support
+- **api-proxy.ts** - Cookie-based auth token extraction for API calls
 
 ### 🏢 Multi-Tenancy (SaaS Architecture)
 - **Tenant Isolation** - All data scoped by `tenant_id`

@@ -8,9 +8,14 @@ RUN bun install
 
 COPY . .
 
+# Build for production (pre-compiles everything)
+RUN bun run build
+
 ENV HOST=0.0.0.0
 ENV PORT=3000
+ENV NODE_ENV=production
 
 EXPOSE 3000
 
-CMD ["bun", "run", "dev"]
+# Run production server (pre-built, fast startup)
+CMD ["bun", "run", "preview"]

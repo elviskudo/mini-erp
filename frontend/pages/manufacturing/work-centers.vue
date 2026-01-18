@@ -9,11 +9,15 @@
     </div>
 
     <UCard :ui="{ body: { padding: 'p-4' } }">
-      <DataTable 
+      <ServerDataTable 
         :columns="columns" 
-        :rows="workCenters" 
+        :data="workCenters" 
+        :pagination="pagination"
         :loading="loading"
         search-placeholder="Search work centers..."
+        @page-change="handlePageChange"
+        @limit-change="handleLimitChange"
+        @refresh="fetchWorkCenters"
       >
         <template #primary-data="{ row }">
           <UBadge v-if="isPrimary(row)" color="yellow" variant="soft" class="gap-1">
@@ -44,7 +48,7 @@
             />
           </div>
         </template>
-      </DataTable>
+      </ServerDataTable>
     </UCard>
 
     <!-- Form Slideover -->
@@ -166,7 +170,10 @@ const isOpen = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
 const editMode = ref(false)
+const currentPage = ref(1)
+const currentLimit = ref(10)
 const workCenters = ref<any[]>([])
+const pagination = ref<any>(null)
 const mapLoading = ref(true)
 let map: any = null
 let marker: any = null
@@ -237,17 +244,36 @@ const resetForm = () => {
 const fetchWorkCenters = async () => {
     loading.value = true
     try {
-        const res: any = await $fetch('/api/manufacturing/work-centers', {
+        const res: any = await $fetch(`/api/manufacturing/work-centers?page=${currentPage.value}&limit=${currentLimit.value}`, {
             headers: {
                 Authorization: `Bearer ${authStore.token}`
             }
         })
-        workCenters.value = res
+        // Handle new standardized JSON format
+        if (res.success && res.data) {
+            workCenters.value = res.data
+            pagination.value = res.meta?.pagination || null
+        } else if (Array.isArray(res)) {
+            // Fallback for old format
+            workCenters.value = res
+            pagination.value = null
+        }
     } catch (e) {
         console.error(e)
     } finally {
         loading.value = false
     }
+}
+
+const handlePageChange = (page: number) => {
+    currentPage.value = page
+    fetchWorkCenters()
+}
+
+const handleLimitChange = (limit: number) => {
+    currentLimit.value = limit
+    currentPage.value = 1
+    fetchWorkCenters()
 }
 
 const openCreate = () => {

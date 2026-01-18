@@ -49,12 +49,6 @@
         <template #footer>
           <div class="text-center space-y-3 pt-2">
             <p class="text-sm text-gray-500">
-              New to Mini ERP? 
-              <NuxtLink to="/auth/register-company" class="text-pink-600 hover:text-pink-700 font-medium">
-                Create a company
-              </NuxtLink>
-            </p>
-            <p class="text-sm text-gray-500">
               Want to join an existing company? 
               <NuxtLink to="/auth/join-company" class="text-pink-600 hover:text-pink-700 font-medium">
                 Enter code
@@ -150,31 +144,16 @@ const handleLogin = async () => {
         
         authStore.setToken(response.data.access_token)
         
-        // Fetch user details and tenant info
-        try {
-          const user: any = await $api.get('/auth/me')
-          
-          if (user.data.tenant_id) {
-             // Fetch tenant details including timezone
-             try {
-               const tenant: any = await $api.get(`/tenants/${user.data.tenant_id}`)
-               authStore.setTenant({
-                 id: tenant.data.id,
-                 name: tenant.data.name,
-                 company_code: tenant.data.domain,
-                 timezone: tenant.data.timezone || 'UTC',
-                 currency: tenant.data.currency || 'USD'
-               })
-             } catch (tenantError) {
-               console.error('Failed to fetch tenant details:', tenantError)
-             }
-          }
-        } catch (meError) {
-          console.error('Failed to fetch user details:', meError)
+        // Admin bypass logic
+        if (authStore.user?.username === 'admin') {
+            window.location.href = '/'
+            return
         }
 
-        // Force reload to ensure cookie is picked up by middleware/plugins
-        window.location.href = '/'
+        // Fetch user's available tenants
+        const tenants = await authStore.fetchUserTenants()
+        
+        window.location.href = '/auth/select-tenant'
         
     } catch (e: any) {
         console.error(e)

@@ -5,7 +5,7 @@ asyncpg
 psycopg2-binary
 pymongo
 redis
-aio_pika
+aiokafka
 python-dotenv
 passlib[bcrypt]
 bcrypt==4.0.1
@@ -13,7 +13,6 @@ python-jose[cryptography]
 pydantic-settings
 email-validator
 motor
-aio-pika
 alembic
 cloudinary
 python-multipart
@@ -26,3 +25,5 @@ pytest
 pytest-asyncio
 httpx
 aiosqlite
+aio-pika
+qrcode[pil]

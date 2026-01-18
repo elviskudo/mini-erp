@@ -1,11 +1,18 @@
-FROM node:18-alpine
+FROM oven/bun:1
 
 WORKDIR /app
 
-COPY package.json .
+# Copy package files
+COPY package.json bun.lockb* ./
 
-RUN npm install
+# Install dependencies
+RUN bun install --frozen-lockfile || bun install
 
+# Copy source code
 COPY . .
 
-CMD ["node", "index.js"]
+# Expose port
+EXPOSE 3001
+
+# Run with bun
+CMD ["bun", "run", "index.js"]

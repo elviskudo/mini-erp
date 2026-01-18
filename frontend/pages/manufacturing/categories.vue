@@ -133,11 +133,25 @@ const columns = [
 const activeCount = computed(() => categories.value.filter((c: any) => c.is_active).length)
 const inactiveCount = computed(() => categories.value.filter((c: any) => !c.is_active).length)
 
+// Helper to safely extract array from various API response formats
+const extractArray = (response: any): any[] => {
+  if (!response) return []
+  if (Array.isArray(response)) return response
+  if (response.data && Array.isArray(response.data)) return response.data
+  if (response.data?.data && Array.isArray(response.data.data)) return response.data.data
+  if (typeof response === 'object' && response.data) {
+    const d = response.data
+    if (Array.isArray(d)) return d
+    if (d.data && Array.isArray(d.data)) return d.data
+  }
+  return []
+}
+
 const fetchCategories = async () => {
   loading.value = true
   try {
     const res = await $api.get('/manufacturing/categories')
-    categories.value = res.data || []
+    categories.value = extractArray(res)
   } catch (e: any) {
     toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to load', color: 'red' })
   } finally {

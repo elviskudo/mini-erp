@@ -592,6 +592,14 @@ const getStatusColor = (status: string) => {
   }
 }
 
+// Helper to safely extract array from API response
+const extractArray = (res: any): any[] => {
+  if (Array.isArray(res)) return res
+  if (res?.data && Array.isArray(res.data)) return res.data
+  if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data
+  return []
+}
+
 // Fetch data
 const fetchData = async () => {
   loading.value = true
@@ -600,16 +608,17 @@ const fetchData = async () => {
     
     // Fetch products
     const productsRes: any = await $fetch('/api/manufacturing/products', { headers })
-    products.value = productsRes
+    products.value = extractArray(productsRes)
     
     // Fetch work centers
     const wcRes: any = await $fetch('/api/manufacturing/work-centers', { headers })
-    workCenters.value = wcRes
+    workCenters.value = extractArray(wcRes)
     
     // Fetch production orders
     const ordersRes: any = await $fetch('/api/manufacturing/production-orders', { headers })
+    const ordersData = extractArray(ordersRes)
     // Transform data for table display
-    orders.value = ordersRes.map((o: any) => ({
+    orders.value = ordersData.map((o: any) => ({
       ...o,
       orderNo: o.order_no,
       product: o.products?.map((p: any) => p.product?.name).join(', ') || 'N/A',

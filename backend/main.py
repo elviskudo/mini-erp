@@ -12,6 +12,7 @@ from routers import (
 
 from middleware import AuditMiddleware
 from connections.mongodb import connect_to_mongo, close_mongo_connection
+from connections.kafka_utils import get_kafka_producer, close_kafka_producer
 from consumers.finance_consumer import start_finance_consumer
 import asyncio
 from connections.worker import consume_lab_data
@@ -24,6 +25,9 @@ async def lifespan(app: FastAPI):
     # Connect to MongoDB
     await connect_to_mongo()
     
+    # Initialize Kafka producer (connection pooling)
+    await get_kafka_producer()
+    
     # Start Worker (Simple background task for Phase 1)
     # In production, this should be a separate service.
     worker_task = asyncio.create_task(consume_lab_data())
@@ -31,9 +35,9 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Close MongoDB
+    # Cleanup
     await close_mongo_connection()
-    # Cancel worker? worker_task.cancel()
+    await close_kafka_producer()
 
 app = FastAPI(title="Mini ERP API", version="1.0.0", lifespan=lifespan)
 

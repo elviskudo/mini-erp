@@ -1,25 +1,52 @@
+# Mini-ERP Docker Compose - Microservices Architecture
+# Includes: Kafka, Supabase Local, API Gateway, Legacy Backend
+
 services:
-  postgres_db:
-    image: postgres:15
-    container_name: mini_erp_postgres
+  # ============ INFRASTRUCTURE ============
+
+  # Supabase Local PostgreSQL
+  supabase-db:
+    image: postgres:15-alpine
+    container_name: mini_erp_supabase_db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-mini_erp}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - supabase_data:/var/lib/postgresql/data
     networks:
       - erp_network
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
+  # pgAdmin - PostgreSQL DB management UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mini_erp_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    networks:
+      - erp_network
+    ports:
+      - "5050:80"
+    depends_on:
+      - supabase-db
+    restart: unless-stopped
+
+  # MongoDB
   mongo_db:
     image: mongo:latest
     container_name: mini_erp_mongo
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-password}
     volumes:
       - mongo_data:/data/db
     networks:
@@ -28,6 +55,7 @@ services:
       - "27017:27017"
     restart: unless-stopped
 
+  # Redis
   redis_cache:
     image: redis:alpine
     container_name: mini_erp_redis
@@ -37,32 +65,376 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
-  rabbitmq_broker:
-    image: rabbitmq:management
-    container_name: mini_erp_rabbitmq
+  # Zookeeper (required for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: mini_erp_zookeeper
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     networks:
       - erp_network
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "2181:2181"
     restart: unless-stopped
+
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: mini_erp_kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - erp_network
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    restart: unless-stopped
+
+  # Kafka UI (for debugging)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: mini_erp_kafka_ui
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - erp_network
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # ============ API GATEWAY ============
+
+  api-gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: mini_erp_gateway
+    environment:
+      PORT: "8000"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${SECRET_KEY:-your-super-secret-key}
+      MONGO_URI: mongodb://${MONGO_USER:-root}:${MONGO_PASSWORD:-password}@mongo_db:27017
+    networks:
+      - erp_network
+    ports:
+      - "8000:8000"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ AUTH SERVICE ============
+
+  auth-service:
+    build:
+      context: ./services/core/auth-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_auth
+    environment:
+      PORT: "8010"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${SECRET_KEY:-your-super-secret-key}
+    networks:
+      - erp_network
+    ports:
+      - "8010:8010"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ FINANCE SERVICE ============
+
+  finance-service:
+    build:
+      context: ./services/core/finance-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_finance
+    environment:
+      PORT: "8011"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8011:8011"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ HR SERVICE ============
+
+  hr-service:
+    build:
+      context: ./services/core/hr-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_hr
+    environment:
+      PORT: "8012"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8012:8012"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ INVENTORY SERVICE ============
+
+  inventory-service:
+    build:
+      context: ./services/core/inventory-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_inventory
+    environment:
+      PORT: "8013"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8013:8013"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ MANUFACTURING SERVICE ============
+
+  manufacturing-service:
+    build:
+      context: ./services/core/manufacturing-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_manufacturing
+    environment:
+      PORT: "8014"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8014:8014"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ FLEET SERVICE ============
+
+  fleet-service:
+    build:
+      context: ./services/core/fleet-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_fleet
+    environment:
+      PORT: "8015"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8015:8015"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ PROJECTS SERVICE ============
+
+  projects-service:
+    build:
+      context: ./services/core/projects-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_projects
+    environment:
+      PORT: "8016"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8016:8016"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ CRM SERVICE ============
+
+  crm-service:
+    build:
+      context: ./services/core/crm-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_crm
+    environment:
+      PORT: "8017"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+      REDIS_URL: redis://redis_cache:6379
+      KAFKA_BROKERS: kafka:9092
+    networks:
+      - erp_network
+    ports:
+      - "8017:8017"
+    depends_on:
+      - supabase-db
+      - redis_cache
+      - kafka
+    restart: unless-stopped
+
+  # ============ PROCUREMENT SERVICE ============
+
+  procurement-service:
+    build:
+      context: ./services/core/procurement-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_procurement
+    environment:
+      PORT: "8018"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+    networks:
+      - erp_network
+    ports:
+      - "8018:8018"
+    depends_on:
+      - supabase-db
+    restart: unless-stopped
+
+  # ============ LOGISTICS SERVICE ============
+
+  logistics-service:
+    build:
+      context: ./services/core/logistics-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_logistics
+    environment:
+      PORT: "8019"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+    networks:
+      - erp_network
+    ports:
+      - "8019:8019"
+    depends_on:
+      - supabase-db
+    restart: unless-stopped
+
+  # ============ MAINTENANCE SERVICE ============
+
+  maintenance-service:
+    build:
+      context: ./services/core/maintenance-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_maintenance
+    environment:
+      PORT: "8020"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+    networks:
+      - erp_network
+    ports:
+      - "8020:8020"
+    depends_on:
+      - supabase-db
+    restart: unless-stopped
+
+  # ============ POS SERVICE ============
+
+  pos-service:
+    build:
+      context: ./services/core/pos-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_pos
+    environment:
+      PORT: "8021"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+    networks:
+      - erp_network
+    ports:
+      - "8021:8021"
+    depends_on:
+      - supabase-db
+    restart: unless-stopped
+
+  # ============ SALES SERVICE ============
+
+  sales-service:
+    build:
+      context: ./services/core/sales-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_sales
+    environment:
+      PORT: "8023"
+      GIN_MODE: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}?sslmode=disable
+    networks:
+      - erp_network
+    ports:
+      - "8023:8023"
+    depends_on:
+      - supabase-db
+    restart: unless-stopped
+
+  # ============ LEGACY BACKEND (Temporary) ============
 
   backend_api:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: mini_erp_backend
+    container_name: mini_erp_backend_legacy
     volumes:
       - ./backend:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}
-      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo_db:27017
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@supabase-db:5432/${POSTGRES_DB:-mini_erp}
+      MONGO_URI: mongodb://${MONGO_USER:-root}:${MONGO_PASSWORD:-password}@mongo_db:27017
       REDIS_URL: redis://redis_cache:6379
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq_broker:5672/
-      SECRET_KEY: ${SECRET_KEY}
+      KAFKA_BROKERS: kafka:9092
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key}
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
@@ -71,13 +443,36 @@ services:
     networks:
       - erp_network
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
-      - postgres_db
+      - supabase-db
       - mongo_db
       - redis_cache
-      - rabbitmq_broker
+      - kafka
     restart: unless-stopped
+
+  # ============ ML SERVICE ============
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: mini_erp_ml
+    volumes:
+      - ./ml-service:/app
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis_cache:6379
+    networks:
+      - erp_network
+    ports:
+      - "8002:8000"
+    depends_on:
+      - kafka
+      - redis_cache
+    restart: unless-stopped
+
+  # ============ FRONTEND ============
 
   frontend_web:
     build:
@@ -99,10 +494,13 @@ services:
       - "24678:24678"
     environment:
       - NUXT_PORT=80
+      - NUXT_PUBLIC_API_BASE=http://localhost:8000/api/v1
     depends_on:
-      - backend_api
+      - api-gateway
     command: bun run dev
     restart: unless-stopped
+
+  # ============ POS APP ============
 
   pos_app:
     build:
@@ -113,34 +511,34 @@ services:
       - ./pos:/app
       - /app/node_modules
     environment:
-      NUXT_PUBLIC_API_BASE: /api
+      NUXT_PUBLIC_API_BASE: http://localhost:8000/api/v1
     networks:
       - erp_network
     ports:
       - "3334:3000"
       - "24679:24678"
     depends_on:
-      - backend_api
+      - api-gateway
     command: npm run dev
     restart: unless-stopped
+
+  # ============ REALTIME SERVER ============
 
   realtime_server:
     build:
       context: ./realtime
       dockerfile: Dockerfile
     container_name: mini_erp_realtime
-    volumes:
-      - ./realtime:/app
     environment:
       REDIS_URL: redis://redis_cache:6379
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq_broker:5672/
+      KAFKA_BROKERS: kafka:9092
     networks:
       - erp_network
     ports:
       - "3001:3001"
     depends_on:
       - redis_cache
-      - rabbitmq_broker
+      - kafka
     restart: unless-stopped
 
 networks:
@@ -148,5 +546,5 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  supabase_data:
   mongo_data:

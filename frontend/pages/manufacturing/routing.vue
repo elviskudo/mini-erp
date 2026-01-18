@@ -231,6 +231,14 @@ const removeStep = (idx: number) => {
   form.steps.splice(idx, 1)
 }
 
+// Helper to safely extract array from API response
+const extractArray = (res: any): any[] => {
+  if (Array.isArray(res)) return res
+  if (res?.data && Array.isArray(res.data)) return res.data
+  if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data
+  return []
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
@@ -239,9 +247,9 @@ const fetchData = async () => {
       $api.get('/manufacturing/products'),
       $api.get('/manufacturing/work-centers')
     ])
-    routings.value = routingsRes.data || []
-    products.value = productsRes.data || []
-    workCenters.value = wcRes.data || []
+    routings.value = extractArray(routingsRes)
+    products.value = extractArray(productsRes)
+    workCenters.value = extractArray(wcRes)
   } catch (e) {
     console.error(e)
   } finally {

@@ -364,15 +364,30 @@ const getTypeColor = (type: string) => {
   }
 }
 
+// Helper to safely extract array from various API response formats
+const extractArray = (response: any): any[] => {
+  if (!response) return []
+  if (Array.isArray(response)) return response
+  if (response.data && Array.isArray(response.data)) return response.data
+  if (response.data?.data && Array.isArray(response.data.data)) return response.data.data
+  if (typeof response === 'object' && response.data) {
+    const d = response.data
+    if (Array.isArray(d)) return d
+    if (d.data && Array.isArray(d.data)) return d.data
+  }
+  return []
+}
+
 const fetchProducts = async () => {
   loading.value = true
   try {
     const res: any = await $fetch('/api/manufacturing/products', {
       headers: { Authorization: `Bearer ${authStore.token}` }
     })
-    products.value = res
+    const allProducts = extractArray(res)
+    products.value = allProducts
     // Filter for raw materials for BOM dropdown
-    rawMaterials.value = res.filter((p: any) => p.type === 'Raw Material' || p.type === 'WIP')
+    rawMaterials.value = allProducts.filter((p: any) => p.type === 'Raw Material' || p.type === 'WIP')
   } catch (e) {
     console.error(e)
   } finally {

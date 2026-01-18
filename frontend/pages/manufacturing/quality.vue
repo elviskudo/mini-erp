@@ -313,6 +313,14 @@ const getStatusColor = (status: string) => {
   return colors[status] || 'gray'
 }
 
+// Helper to safely extract array from API response
+const extractArray = (res: any): any[] => {
+  if (Array.isArray(res)) return res
+  if (res?.data && Array.isArray(res.data)) return res.data
+  if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data
+  return []
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
@@ -321,9 +329,9 @@ const fetchData = async () => {
       $api.get('/manufacturing/products'),
       $api.get('/manufacturing/orders')
     ])
-    checks.value = checksRes.data || []
-    products.value = productsRes.data || []
-    productionOrders.value = ordersRes.data || []
+    checks.value = extractArray(checksRes)
+    products.value = extractArray(productsRes)
+    productionOrders.value = extractArray(ordersRes)
   } catch (e) {
     console.error(e)
   } finally {

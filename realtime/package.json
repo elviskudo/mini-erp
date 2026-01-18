@@ -2,15 +2,17 @@
     "name": "mini-erp-realtime",
     "version": "1.0.0",
     "description": "Realtime server for Mini ERP",
+    "type": "module",
     "main": "index.js",
     "scripts": {
-        "start": "node index.js"
+        "start": "bun run index.js",
+        "dev": "bun --watch index.js"
     },
     "dependencies": {
         "socket.io": "^4.7.2",
         "redis": "^4.6.10",
         "@socket.io/redis-adapter": "^8.2.1",
-        "amqplib": "^0.10.3",
+        "kafkajs": "^2.2.4",
         "dotenv": "^16.3.1"
     }
 }

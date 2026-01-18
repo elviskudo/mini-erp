@@ -1,4 +1,4 @@
-// Server middleware to proxy /api requests to backend
+// Server middleware to proxy /api requests to API Gateway
 // This fixes the duplicate Transfer-Encoding header issue with nitro proxy
 
 export default defineEventHandler(async (event) => {
@@ -10,8 +10,10 @@ export default defineEventHandler(async (event) => {
         return
     }
 
-    const backendUrl = 'http://backend_api:8000'
-    const targetPath = path.replace('/api/', '/')
+    // Use API Gateway instead of legacy backend
+    const backendUrl = 'http://api-gateway:8000'
+    // Transform /api/xxx to /api/v1/xxx for gateway routing
+    const targetPath = path.replace('/api/', '/api/v1/')
     // Include query params in the target URL
     const queryString = requestUrl.search || ''
     const targetUrl = `${backendUrl}${targetPath}${queryString}`
@@ -27,6 +29,15 @@ export default defineEventHandler(async (event) => {
             headers[key] = value
         }
     })
+
+    // Extract auth_token from cookie and set Authorization header if not already present
+    if (!headers['authorization']) {
+        const cookieHeader = event.headers.get('cookie') || ''
+        const authTokenMatch = cookieHeader.match(/auth_token=([^;]+)/)
+        if (authTokenMatch) {
+            headers['authorization'] = `Bearer ${authTokenMatch[1]}`
+        }
+    }
 
     // Prepare fetch options
     const fetchOptions: RequestInit = {
@@ -51,8 +62,8 @@ export default defineEventHandler(async (event) => {
         // Fetch from backend
         const response = await fetch(targetUrl, fetchOptions)
 
-        // Get response body as text/json
-        const responseData = await response.text()
+        // Get response body as text
+        const responseText = await response.text()
 
         // Set response status
         setResponseStatus(event, response.status)
@@ -64,11 +75,17 @@ export default defineEventHandler(async (event) => {
             }
         })
 
-        // Return response body
-        return responseData
+        // IMPORTANT: Return raw text directly to prevent Nuxt from re-serializing
+        // Set content-type explicitly to ensure proper handling
+        const contentType = response.headers.get('content-type') || 'application/json'
+        setHeader(event, 'content-type', contentType)
+
+        // Return raw response text (don't parse JSON - let browser handle it)
+        return responseText
     } catch (error) {
         console.error('Proxy error:', error)
         setResponseStatus(event, 502)
-        return { error: 'Backend unavailable' }
+        setHeader(event, 'content-type', 'application/json')
+        return JSON.stringify({ error: 'Backend unavailable' })
     }
 })

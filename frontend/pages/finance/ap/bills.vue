@@ -163,7 +163,7 @@ const statusOptions = [
   { label: 'Paid', value: 'Paid' }
 ]
 
-const paymentTermsOptions = ['Net 30', 'Net 15', 'Net 7', 'Due on Receipt', 'Net 60']
+const paymentTermsOptions = ['Cash', 'Net 30', 'Net 15', 'Net 7', 'Due on Receipt', 'Net 60']
 
 const vendorOptions = computed(() => [
   { label: 'All Vendors', value: '' },

@@ -194,3 +194,32 @@ func Unauthorized(c *gin.Context, message string) {
 func InternalError(c *gin.Context, message string) {
 	ErrorResponse(c, 500, "INTERNAL_ERROR", message)
 }
+
+// SuccessWithPagination is an alias for SuccessList with different argument order (for backward compatibility)
+func SuccessWithPagination(c *gin.Context, message string, data interface{}, page, limit int, total int64) {
+	SuccessList(c, data, page, limit, total, message)
+}
+
+// Created returns 201 response (alias with message-first ordering for backward compatibility)
+func Created(c *gin.Context, message string, data interface{}) {
+	c.JSON(201, Response{
+		Success:   true,
+		Code:      "CREATED",
+		Message:   message,
+		Data:      data,
+		Timestamp: getTimestamp(),
+		RequestID: generateRequestID(),
+	})
+}
+
+// Updated returns 200 response for updates (alias with message-first ordering)
+func Updated(c *gin.Context, message string, data interface{}) {
+	c.JSON(200, Response{
+		Success:   true,
+		Code:      "UPDATED",
+		Message:   message,
+		Data:      data,
+		Timestamp: getTimestamp(),
+		RequestID: generateRequestID(),
+	})
+}

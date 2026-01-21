@@ -21,14 +21,14 @@ func NewCRMHandler() *CRMHandler {
 func (h *CRMHandler) GetStats(c *gin.Context) {
 	db := database.GetDB()
 	if db == nil {
-		response.Success(c, "Statistics retrieved", gin.H{
+		response.Success(c, gin.H{
 			"total_leads":         15,
 			"new_leads":           5,
 			"qualified_leads":     8,
 			"total_customers":     50,
 			"total_opportunities": 10,
 			"pipeline_value":      500000000,
-		})
+		}, "Statistics retrieved")
 		return
 	}
 
@@ -39,13 +39,13 @@ func (h *CRMHandler) GetStats(c *gin.Context) {
 	db.Model(&models.Customer{}).Count(&totalCustomers)
 	db.Model(&models.Opportunity{}).Count(&totalOpportunities)
 
-	response.Success(c, "Statistics retrieved", gin.H{
+	response.Success(c, gin.H{
 		"total_leads":         totalLeads,
 		"new_leads":           newLeads,
 		"qualified_leads":     qualified,
 		"total_customers":     totalCustomers,
 		"total_opportunities": totalOpportunities,
-	})
+	}, "Statistics retrieved")
 }
 
 // ========== LEADS ==========
@@ -99,7 +99,7 @@ func (h *CRMHandler) GetLead(c *gin.Context) {
 	leadID := c.Param("id")
 
 	if db == nil {
-		response.Success(c, "Lead retrieved", gin.H{"id": leadID, "name": "PT ABC Corp"})
+		response.Success(c, gin.H{"id": leadID, "name": "PT ABC Corp"}, "Lead retrieved")
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *CRMHandler) GetLead(c *gin.Context) {
 		response.NotFound(c, "Lead not found")
 		return
 	}
-	response.Success(c, "Lead retrieved", lead)
+	response.Success(c, lead, "Lead retrieved")
 }
 
 // CreateLead creates a new lead
@@ -186,7 +186,7 @@ func (h *CRMHandler) GetCustomer(c *gin.Context) {
 	customerID := c.Param("id")
 
 	if db == nil {
-		response.Success(c, "Customer retrieved", gin.H{"id": customerID, "name": "PT Sejahtera"})
+		response.Success(c, gin.H{"id": customerID, "name": "PT Sejahtera"}, "Customer retrieved")
 		return
 	}
 
@@ -195,7 +195,7 @@ func (h *CRMHandler) GetCustomer(c *gin.Context) {
 		response.NotFound(c, "Customer not found")
 		return
 	}
-	response.Success(c, "Customer retrieved", customer)
+	response.Success(c, customer, "Customer retrieved")
 }
 
 // CreateCustomer creates a customer

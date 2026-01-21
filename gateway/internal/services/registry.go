@@ -75,6 +75,9 @@ func (r *ServiceRegistry) initDefaultServices() {
 	// CRM service (NEW - Go microservice)
 	r.Register(ServiceConfig{Name: "crm", URL: crmService, Priority: 1})
 
+	// Sales service (NEW - Go microservice)
+	r.Register(ServiceConfig{Name: "sales", URL: "http://sales-service:8023", Priority: 1})
+
 	// Procurement service (NEW - Go microservice)
 	procurementService := getEnv("PROCUREMENT_SERVICE_URL", "http://procurement-service:8018")
 	r.Register(ServiceConfig{Name: "procurement", URL: procurementService, Priority: 1})
@@ -101,7 +104,7 @@ func (r *ServiceRegistry) initDefaultServices() {
 	r.Register(ServiceConfig{Name: "iot", URL: legacyBackend, Priority: 2})
 	r.Register(ServiceConfig{Name: "ap", URL: legacyBackend, Priority: 2})
 	r.Register(ServiceConfig{Name: "ar", URL: legacyBackend, Priority: 2})
-	r.Register(ServiceConfig{Name: "sales", URL: legacyBackend, Priority: 2})
+	// r.Register(ServiceConfig{Name: "sales", URL: legacyBackend, Priority: 2}) // Moved to core service
 	r.Register(ServiceConfig{Name: "ecommerce", URL: legacyBackend, Priority: 2})
 	r.Register(ServiceConfig{Name: "compliance", URL: legacyBackend, Priority: 2})
 	r.Register(ServiceConfig{Name: "subscription", URL: legacyBackend, Priority: 2})

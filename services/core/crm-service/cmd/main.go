@@ -65,6 +65,20 @@ func main() {
 
 		crm.GET("/activities", h.ListActivities)
 		crm.POST("/activities", h.CreateActivity)
+
+		// Companies (B2B)
+		crm.GET("/companies", h.ListCompanies)
+		crm.POST("/companies", h.CreateCompany)
+		crm.GET("/companies/:id", h.GetCompany)
+		crm.PUT("/companies/:id", h.UpdateCompany)
+		crm.DELETE("/companies/:id", h.DeleteCompany)
+
+		// Contacts
+		crm.GET("/contacts", h.ListContacts)
+		crm.POST("/contacts", h.CreateContact)
+		crm.GET("/contacts/:id", h.GetContact)
+		crm.PUT("/contacts/:id", h.UpdateContact)
+		crm.DELETE("/contacts/:id", h.DeleteContact)
 	}
 
 	port := os.Getenv("PORT")

@@ -229,9 +229,9 @@ const form = reactive({
   current_balance: 0
 })
 
-const totalBalance = computed(() => customers.value.reduce((sum: number, c: any) => sum + (c.current_balance || 0), 0))
-const totalCreditLimit = computed(() => customers.value.reduce((sum: number, c: any) => sum + (c.credit_limit || 0), 0))
-const overdueCustomers = computed(() => customers.value.filter((c: any) => c.credit_limit > 0 && c.current_balance > c.credit_limit * 0.8).length)
+const totalBalance = computed(() => Array.isArray(customers.value) ? customers.value.reduce((sum: number, c: any) => sum + (c.current_balance || 0), 0) : 0)
+const totalCreditLimit = computed(() => Array.isArray(customers.value) ? customers.value.reduce((sum: number, c: any) => sum + (c.credit_limit || 0), 0) : 0)
+const overdueCustomers = computed(() => Array.isArray(customers.value) ? customers.value.filter((c: any) => c.credit_limit > 0 && c.current_balance > c.credit_limit * 0.8).length : 0)
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0)
 
@@ -261,6 +261,7 @@ const exportItems = [
 ]
 
 const exportCSV = () => {
+  if (!Array.isArray(customers.value)) return
   const headers = ['Name', 'Email', 'Phone', 'Address', 'Credit Limit', 'Balance']
   const rows = customers.value.map(c => [
     c.name || '',
@@ -277,6 +278,7 @@ const exportCSV = () => {
 }
 
 const exportXLS = () => {
+  if (!Array.isArray(customers.value)) return
   // Simple HTML table that Excel can open
   let html = '<table border="1"><thead><tr>'
   html += '<th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Credit Limit</th><th>Balance</th>'
@@ -293,6 +295,7 @@ const exportXLS = () => {
 }
 
 const exportPDF = () => {
+  if (!Array.isArray(customers.value)) return
   // Create a simple printable HTML document
   const printWindow = window.open('', '_blank')
   if (!printWindow) {
@@ -363,8 +366,8 @@ const topupCredit = async () => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const res = await $api.get('/ar/customers')
-    customers.value = res.data || []
+    const res = await $api.get('/crm/customers')
+    customers.value = Array.isArray(res.data) ? res.data : (res.data?.data || [])
   } catch (e) {
     console.error(e)
   } finally {
@@ -399,10 +402,10 @@ const save = async () => {
   submitting.value = true
   try {
     if (isEditing.value && editingId.value) {
-      await $api.put(`/ar/customers/${editingId.value}`, form)
+      await $api.put(`/crm/customers/${editingId.value}`, form)
       toast.add({ title: 'Updated', description: 'Customer updated successfully', color: 'green' })
     } else {
-      await $api.post('/ar/customers', form)
+      await $api.post('/crm/customers', form)
       toast.add({ title: 'Created', description: 'Customer created successfully', color: 'green' })
     }
     isOpen.value = false
@@ -417,7 +420,7 @@ const save = async () => {
 const confirmDelete = async (row: any) => {
   if (!confirm(`Delete customer "${row.name}"?`)) return
   try {
-    await $api.delete(`/ar/customers/${row.id}`)
+    await $api.delete(`/crm/customers/${row.id}`)
     toast.add({ title: 'Deleted', description: 'Customer deleted successfully', color: 'green' })
     fetchData()
   } catch (e: any) {

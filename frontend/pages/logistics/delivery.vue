@@ -107,7 +107,7 @@
             <UIcon name="i-heroicons-user" />
             Customer Information
           </h4>
-          <p class="text-xs text-gray-400 mb-3">Select existing customer or enter manually. Customers are managed in <NuxtLink to="/ar/customers" class="text-blue-600 underline">AR → Customers</NuxtLink></p>
+          <p class="text-xs text-gray-400 mb-3">Select existing customer or enter manually. Customers are managed in <NuxtLink to="/crm/customers" class="text-blue-600 underline">CRM → Customers</NuxtLink></p>
           
           <UFormGroup label="Select Customer" hint="Choose from registered customers" :ui="{ hint: 'text-xs text-gray-400' }">
             <USelect 
@@ -421,12 +421,13 @@ const fetchData = async () => {
       $api.get('/delivery/orders').catch(() => ({ data: [] })),
       $api.get('/manufacturing/products').catch(() => ({ data: [] })),
       $api.get('/inventory/stock').catch(() => ({ data: [] })),
-      $api.get('/ar/customers').catch(() => ({ data: [] }))
+      $api.get('/crm/customers').catch(() => ({ data: [] }))
     ])
     orders.value = doRes.data || []
     products.value = prodRes.data || []
     stock.value = stockRes.data || []
-    customers.value = custRes.data || []
+    const cData = custRes.data
+    customers.value = Array.isArray(cData) ? cData : (cData?.data || [])
   } catch (e) {
     console.error(e)
   } finally {

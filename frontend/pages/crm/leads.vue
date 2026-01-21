@@ -340,10 +340,10 @@ const convertOptions = reactive({
   createOpportunity: true
 })
 
-const newLeads = computed(() => leads.value.filter(l => l.status === 'New').length)
-const contactedLeads = computed(() => leads.value.filter(l => l.status === 'Contacted').length)
-const qualifiedLeads = computed(() => leads.value.filter(l => l.status === 'Qualified').length)
-const convertedLeads = computed(() => leads.value.filter(l => l.status === 'Converted').length)
+const newLeads = computed(() => Array.isArray(leads.value) ? leads.value.filter(l => l.status === 'New').length : 0)
+const contactedLeads = computed(() => Array.isArray(leads.value) ? leads.value.filter(l => l.status === 'Contacted').length : 0)
+const qualifiedLeads = computed(() => Array.isArray(leads.value) ? leads.value.filter(l => l.status === 'Qualified').length : 0)
+const convertedLeads = computed(() => Array.isArray(leads.value) ? leads.value.filter(l => l.status === 'Converted').length : 0)
 
 const getStatusColor = (status: string) => {
   const colors: Record<string, string> = { New: 'blue', Contacted: 'yellow', Qualified: 'green', Converted: 'purple', Lost: 'red' }
@@ -394,7 +394,7 @@ const fetchData = async () => {
   loading.value = true
   try {
     const res = await $api.get('/crm/leads')
-    leads.value = res.data || []
+    leads.value = Array.isArray(res.data) ? res.data : (res.data?.data || [])
   } catch (e) {
     console.error(e)
     toast.add({ title: 'Error', description: 'Failed to load leads', color: 'red' })

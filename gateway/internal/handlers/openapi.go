@@ -58,6 +58,7 @@ func OpenAPISpec(c *gin.Context) {
 			{"name": "Clinic", "description": "Clinic Management"},
 			{"name": "Travel", "description": "Travel & Booking"},
 			{"name": "Sports", "description": "Sports Training Management"},
+			{"name": "Sales", "description": "Sales Management (Quotations, Orders, Invoices)"},
 		},
 		"paths": buildAllPaths(),
 		"components": map[string]interface{}{
@@ -180,6 +181,86 @@ func buildSchemas() map[string]interface{} {
 
 func buildAllPaths() map[string]interface{} {
 	paths := make(map[string]interface{})
+
+	// ========== SALES ==========
+	paths["/api/v1/sales/stats"] = map[string]interface{}{
+		"get": map[string]interface{}{
+			"tags":     []string{"Sales"},
+			"summary":  "Get sales statistics",
+			"security": []map[string]interface{}{{"BearerAuth": []string{}}},
+			"responses": map[string]interface{}{
+				"200": map[string]interface{}{"description": "Sales statistics"},
+			},
+		},
+	}
+
+	paths["/api/v1/sales/orders"] = map[string]interface{}{
+		"get": map[string]interface{}{
+			"tags":     []string{"Sales"},
+			"summary":  "List sales orders",
+			"security": []map[string]interface{}{{"BearerAuth": []string{}}},
+			"parameters": []map[string]interface{}{
+				{"name": "page", "in": "query", "schema": map[string]interface{}{"type": "integer", "default": 1}},
+				{"name": "limit", "in": "query", "schema": map[string]interface{}{"type": "integer", "default": 10}},
+			},
+			"responses": map[string]interface{}{
+				"200": map[string]interface{}{
+					"description": "List of sales orders",
+					"content": map[string]interface{}{
+						"application/json": map[string]interface{}{
+							"schema": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"data": map[string]interface{}{
+										"type":  "array",
+										"items": map[string]interface{}{"$ref": "#/components/schemas/SalesOrder"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"post": map[string]interface{}{
+			"tags":     []string{"Sales"},
+			"summary":  "Create sales order",
+			"security": []map[string]interface{}{{"BearerAuth": []string{}}},
+			"requestBody": map[string]interface{}{
+				"required": true,
+				"content": map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema": map[string]interface{}{"$ref": "#/components/schemas/SalesOrder"},
+					},
+				},
+			},
+			"responses": map[string]interface{}{
+				"201": map[string]interface{}{"description": "Sales order created"},
+			},
+		},
+	}
+
+	paths["/api/v1/sales/quotations"] = map[string]interface{}{
+		"get": map[string]interface{}{
+			"tags":     []string{"Sales"},
+			"summary":  "List quotations",
+			"security": []map[string]interface{}{{"BearerAuth": []string{}}},
+			"responses": map[string]interface{}{
+				"200": map[string]interface{}{"description": "List of quotations"},
+			},
+		},
+	}
+
+	paths["/api/v1/sales/invoices"] = map[string]interface{}{
+		"get": map[string]interface{}{
+			"tags":     []string{"Sales"},
+			"summary":  "List invoices",
+			"security": []map[string]interface{}{{"BearerAuth": []string{}}},
+			"responses": map[string]interface{}{
+				"200": map[string]interface{}{"description": "List of invoices"},
+			},
+		},
+	}
 
 	// ========== HEALTH ==========
 	paths["/health"] = map[string]interface{}{

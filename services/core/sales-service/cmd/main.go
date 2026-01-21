@@ -86,7 +86,7 @@ func setupRoutes(rg *gin.RouterGroup, h *handlers.SalesHandler) {
 	rg.GET("/orders", h.ListOrders)
 	rg.POST("/orders", h.CreateOrder)
 	rg.GET("/orders/:id", h.GetOrder)
-	rg.PUT("/orders/:id/status", h.UpdateOrderStatus)
+	rg.PUT("/orders/:id", h.UpdateOrder)
 	rg.POST("/orders/:id/invoice", h.GenerateInvoice)
 
 	// Invoices
@@ -94,6 +94,39 @@ func setupRoutes(rg *gin.RouterGroup, h *handlers.SalesHandler) {
 	rg.POST("/invoices", h.CreateInvoice)
 	rg.GET("/invoices/:id", h.GetInvoice)
 	rg.POST("/invoices/:id/pay", h.RecordPayment)
+
+	// Credit Notes
+	rg.GET("/credit-notes", h.ListCreditNotes)
+	rg.POST("/credit-notes", h.CreateCreditNote)
+	rg.GET("/credit-notes/:id", h.GetCreditNote)
+	rg.PUT("/credit-notes/:id", h.UpdateCreditNote)
+
+	// Payments
+	rg.GET("/payments", h.ListPayments)
+	rg.POST("/payments", h.CreatePaymentRecord)
+
+	// Price Lists
+	rg.GET("/price-lists", h.ListPriceLists)
+	rg.POST("/price-lists", h.CreatePriceList)
+	rg.GET("/price-lists/:id", h.GetPriceList)
+	rg.PUT("/price-lists/:id", h.UpdatePriceList)
+
+	// Discount Rules
+	rg.GET("/discount-rules", h.ListDiscountRules)
+	rg.POST("/discount-rules", h.CreateDiscountRule)
+	rg.GET("/discount-rules/:id", h.GetDiscountRule)
+	rg.PUT("/discount-rules/:id", h.UpdateDiscountRule)
+
+	// Contracts
+	rg.GET("/contracts", h.ListContracts)
+	rg.POST("/contracts", h.CreateContract)
+	rg.GET("/contracts/:id", h.GetContract)
+	rg.PUT("/contracts/:id", h.UpdateContract)
+
+	// Commissions
+	rg.GET("/commission", h.ListCommissions)
+	rg.POST("/commission", h.CreateCommission)
+	rg.PUT("/commission/:id/status", h.UpdateCommissionStatus)
 }
 
 func getDatabaseStatus() string {

@@ -5,24 +5,33 @@ export const MENUS = [
         to: '/'
     },
     {
-        label: 'Sales',
-        icon: 'i-heroicons-currency-dollar',
-        children: [
-            { label: 'Sales Orders', to: '/sales/orders' },
-            { label: 'Quotations', to: '/sales/quotations' },
-            { label: 'Invoices', to: '/sales/invoices' },
-            { label: 'Analytics', to: '/sales/analytics' }
-        ]
-    },
-    {
         label: 'CRM',
         icon: 'i-heroicons-user-group',
         children: [
             { label: 'Leads', to: '/crm/leads' },
+            { label: 'Companies', to: '/crm/companies' },
+            { label: 'Contacts', to: '/crm/contacts' },
             { label: 'Opportunities', to: '/crm/opportunities' },
             { label: 'Pipeline', to: '/crm/pipeline' },
             { label: 'Customers', to: '/crm/customers' },
-            { label: 'Activities', to: '/crm/activities' } // Integration with Page Builder
+            { label: 'Activities', to: '/crm/activities' },
+            { label: 'Campaigns', to: '/crm/campaigns' },
+            { label: 'Web Forms', to: '/crm/forms' }
+        ]
+    },
+    {
+        label: 'Sales',
+        icon: 'i-heroicons-currency-dollar',
+        children: [
+            { label: 'Quotations', to: '/sales/quotations' },
+            { label: 'Sales Orders', to: '/sales/orders' },
+            { label: 'Invoices', to: '/sales/invoices' },
+            { label: 'Credit Notes', to: '/sales/credit-notes' },
+            { label: 'Price Lists', to: '/sales/price-lists' },
+            { label: 'Discount Rules', to: '/sales/discount-rules' },
+            { label: 'Contracts', to: '/sales/contracts' },
+            { label: 'Commission', to: '/sales/commission' },
+            { label: 'Analytics', to: '/sales/analytics' }
         ]
     },
     {

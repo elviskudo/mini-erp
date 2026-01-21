@@ -105,26 +105,35 @@ func getSeedMenus() []SeedMenuItem {
 		// 1. Dashboard
 		{Label: "Dashboard", Icon: strPtr("i-heroicons-home"), To: strPtr("/")},
 
-		// 2. Sales
-		{Label: "Sales", Icon: strPtr("i-heroicons-banknotes"), Children: []SeedMenuItem{
-			{Label: "Sales Orders", To: strPtr("/sales/orders")},
-			{Label: "Quotations", To: strPtr("/sales/quotations")},
-			{Label: "Invoices", To: strPtr("/sales/invoices")},
-			{Label: "Analytics", To: strPtr("/sales/analytics")},
-		}},
-
-		// 3. CRM
+		// 2. CRM (Customer first, before Sales)
 		{Label: "CRM", Icon: strPtr("i-heroicons-users"), Children: []SeedMenuItem{
 			{Label: "Leads", To: strPtr("/crm/leads")},
-			{Label: "Deals", To: strPtr("/crm/deals")},
+			{Label: "Companies", To: strPtr("/crm/companies")},
+			{Label: "Contacts", To: strPtr("/crm/contacts")},
+			{Label: "Opportunities", To: strPtr("/crm/opportunities")},
 			{Label: "Pipeline", To: strPtr("/crm/pipeline")},
 			{Label: "Customers", To: strPtr("/crm/customers")},
 			{Label: "Activities", To: strPtr("/crm/activities")},
+			{Label: "Campaigns", To: strPtr("/crm/campaigns")},
+			{Label: "Web Forms", To: strPtr("/crm/forms")},
 			{Label: "Marketing", Children: []SeedMenuItem{
 				{Label: "Page Builder", To: strPtr("/crm/marketing/pages")},
 				{Label: "Email & Broadcast", To: strPtr("/crm/marketing/email")},
 				{Label: "Promos", To: strPtr("/crm/promos")},
 			}},
+		}},
+
+		// 3. Sales (Complete ERP Flow)
+		{Label: "Sales", Icon: strPtr("i-heroicons-banknotes"), Children: []SeedMenuItem{
+			{Label: "Quotations", To: strPtr("/sales/quotations")},
+			{Label: "Sales Orders", To: strPtr("/sales/orders")},
+			{Label: "Invoices", To: strPtr("/sales/invoices")},
+			{Label: "Credit Notes", To: strPtr("/sales/credit-notes")},
+			{Label: "Price Lists", To: strPtr("/sales/price-lists")},
+			{Label: "Discount Rules", To: strPtr("/sales/discount-rules")},
+			{Label: "Contracts", To: strPtr("/sales/contracts")},
+			{Label: "Commission", To: strPtr("/sales/commission")},
+			{Label: "Analytics", To: strPtr("/sales/analytics")},
 		}},
 
 		// 4. Procurement

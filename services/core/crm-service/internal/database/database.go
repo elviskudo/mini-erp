@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/elviskudo/mini-erp/services/crm-service/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -43,6 +44,15 @@ func Connect() error {
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	// Auto Migrate
+	err = DB.AutoMigrate(
+		&models.Company{},
+		&models.Contact{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to migrate database: %w", err)
+	}
 
 	log.Println("✅ CRM Service: Database connected")
 	return nil

@@ -58,6 +58,14 @@ func Connect() error {
 		&models.SalesOrderItem{},
 		&models.Invoice{},
 		&models.InvoiceItem{},
+		&models.CreditNote{},
+		&models.CreditNoteItem{},
+		&models.PaymentRecord{},
+		&models.PriceList{},
+		&models.PriceListItem{},
+		&models.DiscountRule{},
+		&models.SalesContract{},
+		&models.Commission{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)

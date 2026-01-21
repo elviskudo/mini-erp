@@ -1,6 +1,7 @@
 package response
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -193,4 +194,39 @@ func Unauthorized(c *gin.Context, message string) {
 // InternalError returns 500 error
 func InternalError(c *gin.Context, message string) {
 	ErrorResponse(c, 500, "INTERNAL_ERROR", message)
+}
+
+// Err is a convenience function for backward compatibility (returns 500 by default or use 4xx based on code)
+func Err(c *gin.Context, statusCode int, message string) {
+	code := "ERROR"
+	switch statusCode {
+	case 400:
+		code = "BAD_REQUEST"
+	case 401:
+		code = "UNAUTHORIZED"
+	case 404:
+		code = "NOT_FOUND"
+	case 500:
+		code = "INTERNAL_ERROR"
+	}
+	ErrorResponse(c, statusCode, code, message)
+}
+
+// GetPagination extracts pagination parameters from query string
+func GetPagination(c *gin.Context) (page int, limit int, offset int) {
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "10")
+
+	page = 1
+	limit = 10
+
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+
+	offset = (page - 1) * limit
+	return
 }

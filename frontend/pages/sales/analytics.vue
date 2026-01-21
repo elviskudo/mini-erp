@@ -1,7 +1,7 @@
 <template>
     <div class="space-y-6">
         <div>
-            <h1 class="text-2xl font-bold text-gray-900">Sales Dashboard</h1>
+            <h1 class="text-2xl font-bold text-gray-900">Sales Analytics</h1>
             <p class="text-gray-500">Overview of sales performance and activity.</p>
         </div>
 
@@ -56,11 +56,16 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
+const { $api } = useNuxtApp()
+const toast = useToast()
+const authStore = useAuthStore()
+
 definePageMeta({
     middleware: 'auth'
 })
 
-const { $api } = useNuxtApp()
 const stats = ref({
     revenue_monthly: 0,
     pipeline_value: 0,

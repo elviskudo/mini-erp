@@ -49,6 +49,13 @@ func Connect() error {
 	err = DB.AutoMigrate(
 		&models.Company{},
 		&models.Contact{},
+		&models.Campaign{},
+		&models.WebForm{},
+		&models.WebFormSubmission{},
+		&models.CustomerEmail{},
+		&models.CustomerCall{},
+		&models.CustomerMeeting{},
+		&models.CustomerDocument{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)

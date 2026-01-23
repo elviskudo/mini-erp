@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/elviskudo/mini-erp/services/crm-service/internal/database"
 	"github.com/elviskudo/mini-erp/services/crm-service/internal/models"
@@ -214,8 +215,38 @@ func (h *CRMHandler) CreateCustomer(c *gin.Context) {
 
 // UpdateCustomer updates a customer
 func (h *CRMHandler) UpdateCustomer(c *gin.Context) {
+	db := database.GetDB()
 	customerID := c.Param("id")
-	response.Updated(c, "Customer updated successfully", gin.H{"id": customerID})
+
+	if db == nil {
+		response.Updated(c, "Customer updated successfully", gin.H{"id": customerID})
+		return
+	}
+
+	var customer models.Customer
+	if err := db.First(&customer, "id = ?", customerID).Error; err != nil {
+		response.NotFound(c, "Customer not found")
+		return
+	}
+
+	var req models.Customer
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Update fields
+	customer.Name = req.Name
+	customer.Email = req.Email
+	customer.Phone = req.Phone
+	customer.Address = req.Address
+	customer.CreditLimit = req.CreditLimit
+
+	if err := db.Save(&customer).Error; err != nil {
+		response.InternalError(c, "Failed to update customer")
+		return
+	}
+	response.Updated(c, "Customer updated successfully", customer)
 }
 
 // ========== OPPORTUNITIES ==========
@@ -250,9 +281,173 @@ func (h *CRMHandler) ListOpportunities(c *gin.Context) {
 	response.SuccessWithPagination(c, "Opportunities retrieved", opportunities, page, limit, total)
 }
 
+// GetOpportunity retrieves an opportunity by ID
+func (h *CRMHandler) GetOpportunity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Success(c, gin.H{"id": id, "name": "Mock Opportunity"}, "Opportunity retrieved")
+		return
+	}
+
+	var opp models.Opportunity
+	if err := db.First(&opp, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "Opportunity not found")
+		return
+	}
+	response.Success(c, opp, "Opportunity retrieved")
+}
+
 // CreateOpportunity creates an opportunity
 func (h *CRMHandler) CreateOpportunity(c *gin.Context) {
-	response.Created(c, "Opportunity created successfully", gin.H{"id": "new-opp-id"})
+	db := database.GetDB()
+
+	var req models.Opportunity
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	if db == nil {
+		response.Created(c, "Opportunity created successfully", gin.H{"id": "new-opp-id", "name": req.Name})
+		return
+	}
+
+	// Set tenant ID
+	tenantID := c.GetHeader("X-Tenant-ID")
+	if tenantID != "" {
+		req.TenantID = tenantID
+	}
+	if req.TenantID == "" {
+		req.TenantID = "00000000-0000-0000-0000-000000000000"
+	}
+
+	// Handle empty strings for UUID pointer fields - convert to nil
+	if req.CustomerID != nil && *req.CustomerID == "" {
+		req.CustomerID = nil
+	}
+	if req.LeadID != nil && *req.LeadID == "" {
+		req.LeadID = nil
+	}
+	if req.AssignedTo != nil && *req.AssignedTo == "" {
+		req.AssignedTo = nil
+	}
+	if req.CreatedBy != nil && *req.CreatedBy == "" {
+		req.CreatedBy = nil
+	}
+
+	// Convert Stage to uppercase for enum compatibility (QUALIFICATION, NEEDS_ANALYSIS, etc)
+	if req.Stage != nil && *req.Stage != "" {
+		upper := strings.ToUpper(strings.ReplaceAll(*req.Stage, " ", "_"))
+		req.Stage = &upper
+	}
+
+	if err := db.Create(&req).Error; err != nil {
+		response.InternalError(c, "Failed to create opportunity: "+err.Error())
+		return
+	}
+	response.Created(c, "Opportunity created successfully", req)
+}
+
+// UpdateOpportunity updates an opportunity
+func (h *CRMHandler) UpdateOpportunity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Updated(c, "Opportunity updated successfully", gin.H{"id": id})
+		return
+	}
+
+	var opp models.Opportunity
+	if err := db.First(&opp, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "Opportunity not found")
+		return
+	}
+
+	var req models.Opportunity
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	opp.Name = req.Name
+	opp.Description = req.Description
+	opp.Probability = req.Probability
+	opp.ExpectedValue = req.ExpectedValue
+	opp.ExpectedCloseDate = req.ExpectedCloseDate
+	opp.ActualValue = req.ActualValue
+	opp.LostReason = req.LostReason
+
+	// Convert Stage to uppercase for enum compatibility
+	if req.Stage != nil && *req.Stage != "" {
+		upper := strings.ToUpper(strings.ReplaceAll(*req.Stage, " ", "_"))
+		opp.Stage = &upper
+	} else {
+		opp.Stage = nil
+	}
+
+	// Handle UUID pointer fields - convert empty strings to nil
+	if req.CustomerID != nil && *req.CustomerID == "" {
+		opp.CustomerID = nil
+	} else {
+		opp.CustomerID = req.CustomerID
+	}
+	if req.LeadID != nil && *req.LeadID == "" {
+		opp.LeadID = nil
+	} else {
+		opp.LeadID = req.LeadID
+	}
+	if req.AssignedTo != nil && *req.AssignedTo == "" {
+		opp.AssignedTo = nil
+	} else {
+		opp.AssignedTo = req.AssignedTo
+	}
+
+	if err := db.Save(&opp).Error; err != nil {
+		response.InternalError(c, "Failed to update opportunity: "+err.Error())
+		return
+	}
+	response.Updated(c, "Opportunity updated successfully", opp)
+}
+
+// DeleteOpportunity deletes an opportunity
+func (h *CRMHandler) DeleteOpportunity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Success(c, nil, "Opportunity deleted successfully")
+		return
+	}
+
+	if err := db.Delete(&models.Opportunity{}, "id = ?", id).Error; err != nil {
+		response.InternalError(c, "Failed to delete opportunity")
+		return
+	}
+	response.Success(c, nil, "Opportunity deleted successfully")
+}
+
+// UpdateOpportunityStage updates just the stage
+func (h *CRMHandler) UpdateOpportunityStage(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+	stage := c.Query("stage")
+
+	// Convert stage to uppercase for enum compatibility
+	stageUpper := strings.ToUpper(strings.ReplaceAll(stage, " ", "_"))
+
+	if db == nil {
+		response.Updated(c, "Stage updated", gin.H{"id": id, "stage": stageUpper})
+		return
+	}
+
+	if err := db.Model(&models.Opportunity{}).Where("id = ?", id).Update("stage", stageUpper).Error; err != nil {
+		response.InternalError(c, "Failed to update stage: "+err.Error())
+		return
+	}
+	response.Updated(c, "Stage updated successfully", gin.H{"id": id, "stage": stageUpper})
 }
 
 // ========== ACTIVITIES ==========
@@ -284,7 +479,205 @@ func (h *CRMHandler) ListActivities(c *gin.Context) {
 	response.SuccessWithPagination(c, "Activities retrieved", activities, page, limit, total)
 }
 
+// GetActivity retrieves an activity by ID
+func (h *CRMHandler) GetActivity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Success(c, gin.H{"id": id}, "Activity retrieved")
+		return
+	}
+
+	var act models.Activity
+	if err := db.First(&act, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "Activity not found")
+		return
+	}
+	response.Success(c, act, "Activity retrieved")
+}
+
 // CreateActivity creates an activity
 func (h *CRMHandler) CreateActivity(c *gin.Context) {
-	response.Created(c, "Activity created successfully", gin.H{"id": "new-activity-id"})
+	db := database.GetDB()
+
+	var req models.Activity
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	if db == nil {
+		response.Created(c, "Activity created successfully", gin.H{"id": "new-activity-id", "title": req.Title})
+		return
+	}
+
+	// Set tenant ID
+	tenantID := c.GetHeader("X-Tenant-ID")
+	if tenantID != "" {
+		req.TenantID = tenantID
+	}
+	if req.TenantID == "" {
+		req.TenantID = "00000000-0000-0000-0000-000000000000"
+	}
+
+	// Handle empty strings for UUID pointer fields - convert to nil
+	if req.LeadID != nil && *req.LeadID == "" {
+		req.LeadID = nil
+	}
+	if req.CustomerID != nil && *req.CustomerID == "" {
+		req.CustomerID = nil
+	}
+	if req.AssignedTo != nil && *req.AssignedTo == "" {
+		req.AssignedTo = nil
+	}
+	if req.OpportunityID != nil && *req.OpportunityID == "" {
+		req.OpportunityID = nil
+	}
+	if req.CreatedBy != nil && *req.CreatedBy == "" {
+		req.CreatedBy = nil
+	}
+
+	// Convert ActivityType to uppercase for enum compatibility
+	if req.ActivityType != nil && *req.ActivityType != "" {
+		upper := strings.ToUpper(strings.ReplaceAll(*req.ActivityType, " ", "_"))
+		req.ActivityType = &upper
+	} else {
+		req.ActivityType = nil
+	}
+
+	// Convert Status to uppercase for enum compatibility
+	if req.Status != nil && *req.Status != "" {
+		upper := strings.ToUpper(strings.ReplaceAll(*req.Status, " ", "_"))
+		req.Status = &upper
+	} else {
+		req.Status = nil
+	}
+
+	// Handle empty DueTime
+	if req.DueTime != nil && *req.DueTime == "" {
+		req.DueTime = nil
+	}
+
+	if err := db.Create(&req).Error; err != nil {
+		response.InternalError(c, "Failed to create activity: "+err.Error())
+		return
+	}
+	response.Created(c, "Activity created successfully", req)
+}
+
+// UpdateActivity updates an activity
+func (h *CRMHandler) UpdateActivity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Updated(c, "Activity updated successfully", gin.H{"id": id})
+		return
+	}
+
+	var act models.Activity
+	if err := db.First(&act, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "Activity not found")
+		return
+	}
+
+	var req models.Activity
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Update fields using correct column names
+	act.Title = req.Title
+	act.Description = req.Description
+	act.DueDate = req.DueDate
+	act.DurationMinutes = req.DurationMinutes
+	act.Priority = req.Priority
+	act.Outcome = req.Outcome
+
+	// Convert ActivityType to uppercase for enum compatibility
+	if req.ActivityType != nil && *req.ActivityType != "" {
+		upper := strings.ToUpper(strings.ReplaceAll(*req.ActivityType, " ", "_"))
+		act.ActivityType = &upper
+	} else {
+		act.ActivityType = nil
+	}
+
+	// Convert Status to uppercase for enum compatibility
+	if req.Status != nil && *req.Status != "" {
+		upper := strings.ToUpper(strings.ReplaceAll(*req.Status, " ", "_"))
+		act.Status = &upper
+	} else {
+		act.Status = nil
+	}
+
+	// Handle empty DueTime
+	if req.DueTime != nil && *req.DueTime == "" {
+		act.DueTime = nil
+	} else {
+		act.DueTime = req.DueTime
+	}
+
+	// Handle UUID pointer fields - convert empty strings to nil
+	if req.LeadID != nil && *req.LeadID == "" {
+		act.LeadID = nil
+	} else {
+		act.LeadID = req.LeadID
+	}
+	if req.CustomerID != nil && *req.CustomerID == "" {
+		act.CustomerID = nil
+	} else {
+		act.CustomerID = req.CustomerID
+	}
+	if req.OpportunityID != nil && *req.OpportunityID == "" {
+		act.OpportunityID = nil
+	} else {
+		act.OpportunityID = req.OpportunityID
+	}
+	if req.AssignedTo != nil && *req.AssignedTo == "" {
+		act.AssignedTo = nil
+	} else {
+		act.AssignedTo = req.AssignedTo
+	}
+
+	if err := db.Save(&act).Error; err != nil {
+		response.InternalError(c, "Failed to update activity: "+err.Error())
+		return
+	}
+	response.Updated(c, "Activity updated successfully", act)
+}
+
+// DeleteActivity deletes an activity
+func (h *CRMHandler) DeleteActivity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Success(c, nil, "Activity deleted successfully")
+		return
+	}
+
+	if err := db.Delete(&models.Activity{}, "id = ?", id).Error; err != nil {
+		response.InternalError(c, "Failed to delete activity")
+		return
+	}
+	response.Success(c, nil, "Activity deleted successfully")
+}
+
+// CompleteActivity marks an activity as completed
+func (h *CRMHandler) CompleteActivity(c *gin.Context) {
+	db := database.GetDB()
+	id := c.Param("id")
+
+	if db == nil {
+		response.Updated(c, "Activity completed", gin.H{"id": id, "status": "Completed"})
+		return
+	}
+
+	if err := db.Model(&models.Activity{}).Where("id = ?", id).Update("status", "Completed").Error; err != nil {
+		response.InternalError(c, "Failed to complete activity")
+		return
+	}
+	response.Updated(c, "Activity marked as completed", gin.H{"id": id, "status": "Completed"})
 }

@@ -38,26 +38,35 @@ func getAllMenus() []MenuItem {
 		// 1. Dashboard
 		{Label: "Dashboard", Icon: "i-heroicons-home", To: "/"},
 
-		// 2. Sales
-		{Label: "Sales", Icon: "i-heroicons-banknotes", Children: []*MenuChild{
-			{Label: "Sales Orders", To: "/sales/orders"},
-			{Label: "Quotations", To: "/sales/quotations"},
-			{Label: "Invoices", To: "/sales/invoices"},
-			{Label: "Analytics", To: "/sales/analytics"},
-		}},
-
-		// 3. CRM
+		// 2. CRM (Customer first, before Sales)
 		{Label: "CRM", Icon: "i-heroicons-users", Children: []*MenuChild{
 			{Label: "Leads", To: "/crm/leads"},
-			{Label: "Deals", To: "/crm/deals"},
+			{Label: "Companies", To: "/crm/companies"},
+			{Label: "Contacts", To: "/crm/contacts"},
+			{Label: "Opportunities", To: "/crm/opportunities"},
 			{Label: "Pipeline", To: "/crm/pipeline"},
 			{Label: "Customers", To: "/crm/customers"},
 			{Label: "Activities", To: "/crm/activities"},
+			{Label: "Campaigns", To: "/crm/campaigns"},
+			{Label: "Web Forms", To: "/crm/forms"},
 			{Label: "Marketing", Children: []*MenuChild{
 				{Label: "Page Builder", To: "/crm/marketing/pages"},
 				{Label: "Email & Broadcast", To: "/crm/marketing/email"},
 				{Label: "Promos", To: "/crm/promos"},
 			}},
+		}},
+
+		// 3. Sales (Complete ERP Flow)
+		{Label: "Sales", Icon: "i-heroicons-banknotes", Children: []*MenuChild{
+			{Label: "Quotations", To: "/sales/quotations"},
+			{Label: "Sales Orders", To: "/sales/orders"},
+			{Label: "Invoices", To: "/sales/invoices"},
+			{Label: "Credit Notes", To: "/sales/credit-notes"},
+			{Label: "Price Lists", To: "/sales/price-lists"},
+			{Label: "Discount Rules", To: "/sales/discount-rules"},
+			{Label: "Contracts", To: "/sales/contracts"},
+			{Label: "Commission", To: "/sales/commission"},
+			{Label: "Analytics", To: "/sales/analytics"},
 		}},
 
 		// 4. Procurement

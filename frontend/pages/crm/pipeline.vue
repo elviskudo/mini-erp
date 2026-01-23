@@ -133,31 +133,31 @@ const opportunities = ref<any[]>([])
 const draggedItem = ref<any>(null)
 
 const stages = [
-  { label: 'Qualification', value: 'Qualification', bgColor: 'bg-gray-500' },
-  { label: 'Needs Analysis', value: 'Needs Analysis', bgColor: 'bg-blue-500' },
-  { label: 'Proposal', value: 'Proposal', bgColor: 'bg-yellow-500' },
-  { label: 'Negotiation', value: 'Negotiation', bgColor: 'bg-orange-500' },
-  { label: 'Closed Won', value: 'Closed Won', bgColor: 'bg-green-500' },
-  { label: 'Closed Lost', value: 'Closed Lost', bgColor: 'bg-red-500' }
+  { label: 'Qualification', value: 'QUALIFICATION', bgColor: 'bg-gray-500' },
+  { label: 'Needs Analysis', value: 'NEEDS_ANALYSIS', bgColor: 'bg-blue-500' },
+  { label: 'Proposal', value: 'PROPOSAL', bgColor: 'bg-yellow-500' },
+  { label: 'Negotiation', value: 'NEGOTIATION', bgColor: 'bg-orange-500' },
+  { label: 'Closed Won', value: 'CLOSED_WON', bgColor: 'bg-green-500' },
+  { label: 'Closed Lost', value: 'CLOSED_LOST', bgColor: 'bg-red-500' }
 ]
 
-const getStageOpportunities = (stage: string) => opportunities.value.filter(o => o.stage === stage)
-const getStageValue = (stage: string) => opportunities.value.filter(o => o.stage === stage).reduce((sum, o) => sum + (o.expected_value || 0), 0)
+const getStageOpportunities = (stage: string) => opportunities.value.filter(o => o.stage?.toUpperCase() === stage.toUpperCase())
+const getStageValue = (stage: string) => opportunities.value.filter(o => o.stage?.toUpperCase() === stage.toUpperCase()).reduce((sum, o) => sum + (o.expected_value || 0), 0)
 
 const totalPipelineValue = computed(() => 
   opportunities.value
-    .filter(o => !['Closed Won', 'Closed Lost'].includes(o.stage))
+    .filter(o => !['CLOSED_WON', 'CLOSED_LOST'].includes(o.stage?.toUpperCase()))
     .reduce((sum, o) => sum + (o.expected_value || 0), 0)
 )
 
 const wonValue = computed(() => 
   opportunities.value
-    .filter(o => o.stage === 'Closed Won')
+    .filter(o => o.stage?.toUpperCase() === 'CLOSED_WON')
     .reduce((sum, o) => sum + (o.actual_value || o.expected_value || 0), 0)
 )
 
 const avgProbability = computed(() => {
-  const activeOpps = opportunities.value.filter(o => !['Closed Won', 'Closed Lost'].includes(o.stage))
+  const activeOpps = opportunities.value.filter(o => !['CLOSED_WON', 'CLOSED_LOST'].includes(o.stage?.toUpperCase()))
   if (activeOpps.length === 0) return 0
   return Math.round(activeOpps.reduce((sum, o) => sum + (o.probability || 0), 0) / activeOpps.length)
 })
@@ -203,7 +203,8 @@ const fetchData = async () => {
   loading.value = true
   try {
     const res = await $api.get('/crm/opportunities')
-    opportunities.value = res.data || []
+    // Handle nested response structure: {data: {data: [...]}} or {data: [...]}
+    opportunities.value = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : [])
   } catch (e) {
     console.error(e)
   } finally {

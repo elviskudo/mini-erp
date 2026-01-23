@@ -203,13 +203,14 @@ const fetchData = async () => {
   loading.value = true
   try {
     const [oppRes, custRes, leadRes] = await Promise.all([
-      $api.get('/crm/opportunities').catch(() => ({ data: [] })),
-      $api.get('/ar/customers').catch(() => ({ data: [] })),
-      $api.get('/crm/leads').catch(() => ({ data: [] }))
+      $api.get('/crm/opportunities').catch(() => ({ data: { data: [] } })),
+      $api.get('/crm/customers').catch(() => ({ data: { data: [] } })),
+      $api.get('/crm/leads').catch(() => ({ data: { data: [] } }))
     ])
-    opportunities.value = oppRes.data || []
-    customers.value = custRes.data || []
-    leads.value = leadRes.data || []
+    // Handle both {data: [...]} and {data: {data: [...]}} response formats
+    opportunities.value = Array.isArray(oppRes.data?.data) ? oppRes.data.data : (Array.isArray(oppRes.data) ? oppRes.data : [])
+    customers.value = Array.isArray(custRes.data?.data) ? custRes.data.data : (Array.isArray(custRes.data) ? custRes.data : [])
+    leads.value = Array.isArray(leadRes.data?.data) ? leadRes.data.data : (Array.isArray(leadRes.data) ? leadRes.data : [])
   } catch (e) {
     console.error(e)
   } finally {

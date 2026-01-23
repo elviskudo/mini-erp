@@ -400,19 +400,76 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 	crm := rg.Group("/crm")
 	{
 		crm.GET("/stats", proxyToCRM)
+
+		// Leads
 		crm.GET("/leads", proxyToCRM)
 		crm.POST("/leads", proxyToCRM)
 		crm.GET("/leads/:id", proxyToCRM)
 		crm.PUT("/leads/:id", proxyToCRM)
 		crm.POST("/leads/:id/convert", proxyToCRM)
+
+		// Customers
 		crm.GET("/customers", proxyToCRM)
 		crm.POST("/customers", proxyToCRM)
 		crm.GET("/customers/:id", proxyToCRM)
 		crm.PUT("/customers/:id", proxyToCRM)
+
+		// Customer Activity (emails, calls, meetings, documents)
+		crm.GET("/customers/:id/emails", proxyToCRM)
+		crm.POST("/customers/:id/emails", proxyToCRM)
+		crm.GET("/customers/:id/calls", proxyToCRM)
+		crm.POST("/customers/:id/calls", proxyToCRM)
+		crm.GET("/customers/:id/meetings", proxyToCRM)
+		crm.POST("/customers/:id/meetings", proxyToCRM)
+		crm.GET("/customers/:id/documents", proxyToCRM)
+		crm.POST("/customers/:id/documents", proxyToCRM)
+		crm.PUT("/meetings/:id", proxyToCRM)
+		crm.DELETE("/documents/:id", proxyToCRM)
+
+		// Opportunities
 		crm.GET("/opportunities", proxyToCRM)
 		crm.POST("/opportunities", proxyToCRM)
+		crm.GET("/opportunities/:id", proxyToCRM)
+		crm.PUT("/opportunities/:id", proxyToCRM)
+		crm.DELETE("/opportunities/:id", proxyToCRM)
+		crm.PUT("/opportunities/:id/stage", proxyToCRM)
+
+		// Activities
 		crm.GET("/activities", proxyToCRM)
 		crm.POST("/activities", proxyToCRM)
+		crm.GET("/activities/:id", proxyToCRM)
+		crm.PUT("/activities/:id", proxyToCRM)
+		crm.DELETE("/activities/:id", proxyToCRM)
+		crm.PUT("/activities/:id/complete", proxyToCRM)
+
+		// Companies (B2B)
+		crm.GET("/companies", proxyToCRM)
+		crm.POST("/companies", proxyToCRM)
+		crm.GET("/companies/:id", proxyToCRM)
+		crm.PUT("/companies/:id", proxyToCRM)
+		crm.DELETE("/companies/:id", proxyToCRM)
+
+		// Contacts
+		crm.GET("/contacts", proxyToCRM)
+		crm.POST("/contacts", proxyToCRM)
+		crm.GET("/contacts/:id", proxyToCRM)
+		crm.PUT("/contacts/:id", proxyToCRM)
+		crm.DELETE("/contacts/:id", proxyToCRM)
+
+		// Campaigns
+		crm.GET("/campaigns", proxyToCRM)
+		crm.POST("/campaigns", proxyToCRM)
+		crm.GET("/campaigns/:id", proxyToCRM)
+		crm.PUT("/campaigns/:id", proxyToCRM)
+		crm.DELETE("/campaigns/:id", proxyToCRM)
+
+		// Web Forms
+		crm.GET("/forms", proxyToCRM)
+		crm.POST("/forms", proxyToCRM)
+		crm.GET("/forms/:id", proxyToCRM)
+		crm.PUT("/forms/:id", proxyToCRM)
+		crm.DELETE("/forms/:id", proxyToCRM)
+		crm.GET("/forms/:id/submissions", proxyToCRM)
 	}
 
 	// ========== PROCUREMENT SERVICE (proxied to procurement-service:8018) ==========

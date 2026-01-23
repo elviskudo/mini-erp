@@ -1,11 +1,13 @@
 # Mini ERP System
 
-A modern, full-stack ERP system built with efficiency and scalability in mind. Designed for small to medium manufacturing businesses with **complete multi-tenancy support**.
+A modern, full-stack ERP system built with **Go microservices architecture** for efficiency and scalability. Designed for small to medium manufacturing businesses with **complete multi-tenancy support** and **25+ independent services**.
 
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
+![Go](https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white)
+![Gin](https://img.shields.io/badge/Gin-00ADD8?style=flat&logo=go&logoColor=white)
 ![Nuxt](https://img.shields.io/badge/Nuxt.js-00DC82?style=flat&logo=nuxt.js&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-336791?style=flat&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-231F20?style=flat&logo=apachekafka&logoColor=white)
 
 ## ✨ Features
 
@@ -134,15 +136,16 @@ Added 55+ missing CRM routes to `gateway/internal/routes/routes.go`:
 
 ## 🛠 Tech Stack
 
-### Backend
+### Backend (Go Microservices)
 | Component | Technology |
 |-----------|------------|
-| Language | Python 3.10+ |
-| Framework | FastAPI (Async) |
-| Database | PostgreSQL (Relational), MongoDB (Logs/IoT) |
-| Queue | RabbitMQ |
+| Language | **Go 1.21+** |
+| Framework | **Gin** (HTTP Router) |
+| Database | PostgreSQL (via Supabase) |
+| ORM | **GORM** |
+| Message Queue | Kafka |
 | Cache | Redis |
-| ORM | SQLAlchemy 2.0 (Async) |
+| API Gateway | Custom Go Gateway |
 
 ### Frontend
 | Component | Technology |
@@ -153,12 +156,38 @@ Added 55+ missing CRM routes to `gateway/internal/routes/routes.go`:
 | State | Pinia |
 | HTTP Client | Axios |
 
-### Microservices
+### Microservices Architecture (25+ Services)
+
+**Core Services (14):**
+| Service | Port | Description |
+|---------|------|-------------|
+| api-gateway | 8000 | Central API Gateway |
+| auth-service | 8010 | JWT Authentication & Users |
+| finance-service | 8011 | Chart of Accounts, GL, Fixed Assets |
+| hr-service | 8012 | Employees, Payroll |
+| inventory-service | 8013 | Stock, Warehouses, Opname |
+| manufacturing-service | 8014 | BOM, Production Orders |
+| fleet-service | 8015 | Vehicle Management |
+| sales-service | 8016 | Sales Orders, Invoices |
+| crm-service | 8017 | Leads, Opportunities, Activities |
+| procurement-service | 8018 | Purchase Orders, Vendors |
+| logistics-service | 8019 | Delivery, Shipments |
+| maintenance-service | 8020 | Work Orders, Asset Maintenance |
+| pos-service | 8021 | Point of Sale, Transactions |
+| projects-service | 8022 | Project & Task Management |
+
+**Vertical Industry Services (3):**
+| Service | Description |
+|---------|-------------|
+| clinic-service | Healthcare/Clinic Management |
+| sports-service | Sports Facility Management |
+| travel-service | Travel & Tourism Management |
+
+**Frontend Applications:**
 | Service | Port | Description |
 |---------|------|-------------|
 | frontend_web | 3333 | Main ERP Frontend (Nuxt 3 + Bun) |
-| pos_app | 3334 | Point of Sale App (Nuxt 3 + npm) |
-| backend_api | 8000 | FastAPI Backend |
+| pos_app | 3334 | Point of Sale App (Nuxt 3) |
 | realtime_server | 3001 | Socket.IO for real-time updates |
 
 ## 🚀 Quick Start
@@ -789,8 +818,15 @@ Response:
 
 ## 🔧 Development
 
-### Backend Hot Reload
-Backend auto-reloads on file changes via uvicorn.
+### Backend (Go Microservices)
+Each microservice is built separately using Docker:
+```bash
+# Rebuild a specific service
+docker compose up -d --build crm-service
+
+# Rebuild all services
+docker compose up -d --build
+```
 
 ### Frontend Changes
 Restart container after changes:
@@ -798,19 +834,18 @@ Restart container after changes:
 docker compose restart frontend_web
 ```
 
-### Database Migrations
-```bash
-docker compose exec backend_api alembic upgrade head
-docker compose exec backend_api alembic revision --autogenerate -m "description"
-```
+### Database
+Using Supabase PostgreSQL. Migrations managed via GORM AutoMigrate.
 
 ## 🔮 Roadmap
 
-- [ ] Phase 1: Enhanced Manufacturing (MRP, Work Orders)
-- [ ] Phase 2: Advanced Inventory (Batch/Serial Tracking)
-- [ ] Phase 3: Financial Reporting
-- [ ] Phase 4: Mobile App
-- [ ] Phase 5: AI-Powered Analytics
+- [x] Phase 1: Go Microservices Migration (25+ services)
+- [x] Phase 2: CRM Module Complete Overhaul
+- [ ] Phase 3: Enhanced Manufacturing (MRP, Work Orders)
+- [ ] Phase 4: Advanced Inventory (Batch/Serial Tracking)
+- [ ] Phase 5: Financial Reporting
+- [ ] Phase 6: Mobile App
+- [ ] Phase 7: AI-Powered Analytics
 
 ## 📝 License
 
@@ -818,4 +853,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-Built with ❤️ using FastAPI, Nuxt 3, and Docker | Gumroad-inspired design 🎀
+Built with ❤️ using **Go + Gin**, **Nuxt 3**, and **Docker** | Gumroad-inspired design 🎀

@@ -86,6 +86,38 @@ All API endpoints now return a standardized JSON format:
 - **useApi.ts** - Composable for standardized API calls with pagination support
 - **api-proxy.ts** - Cookie-based auth token extraction for API calls
 
+#### CRM Module Fixes (January 2026)
+Complete overhaul of CRM service to fix 500 errors and model-database mismatches:
+
+**Model Schema Fixes:**
+| Model | Issue | Fix |
+|-------|-------|-----|
+| **Activity** | Fields `Type`, `Subject` didn't match DB | Changed to `ActivityType`, `Title` + added `Status`, `DueTime`, `DurationMinutes`, `Priority`, `OpportunityID`, `Outcome`, `CreatedBy`, `UpdatedAt` |
+| **Opportunity** | Fields `Amount`, `ExpectedDate` didn't match DB | Changed to `ExpectedValue`, `ExpectedCloseDate` + added `Description`, `ActualValue`, `LostReason`, `ClosedAt`, `CreatedBy`, `UpdatedAt` |
+
+**Enum Uppercase Conversion:**
+All PostgreSQL enums require uppercase values. Added automatic conversion:
+| Enum | Frontend Value | DB Value |
+|------|---------------|----------|
+| `activitytype` | `Task`, `Follow Up` | `TASK`, `FOLLOW_UP` |
+| `activitystatus` | `In Progress` | `IN_PROGRESS` |
+| `opportunitystage` | `Qualification` | `QUALIFICATION` |
+
+**UUID Handling Fixes:**
+- Empty string UUID fields now converted to `nil` to prevent `invalid input syntax for type uuid: ""` errors
+- Added `BeforeCreate` hooks for auto-generating UUIDs on Opportunity and Activity models
+
+**API Gateway Routes:**
+Added 55+ missing CRM routes to `gateway/internal/routes/routes.go`:
+- Activities: Full CRUD + `/activities/:id/complete`
+- Opportunities: Full CRUD + `/opportunities/:id/stage`
+- Companies, Contacts, Campaigns, Forms: Full CRUD
+- Customer Activity: Emails, Calls, Meetings, Documents
+
+**Frontend Pipeline Fix:**
+- Fixed `pipeline.vue` data extraction for nested API response `{data: {data: [...]}}`
+- Updated stage values to uppercase for proper filtering
+
 ### 🏢 Multi-Tenancy (SaaS Architecture)
 - **Tenant Isolation** - All data scoped by `tenant_id`
 - **Company Registration** - 2-step wizard (Company → Admin)

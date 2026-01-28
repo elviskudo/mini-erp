@@ -10,6 +10,14 @@
 
     <UCard :ui="{ body: { padding: 'p-0' } }">
       <ServerDataTable :columns="columns" :data="items" :loading="loading" :pagination="pagination" @page-change="handlePageChange">
+        <template #customer_id-data="{ row }">
+          <div v-if="getCustomer(row.customer_id)">
+            <div class="font-medium text-gray-900">{{ getCustomer(row.customer_id).name }}</div>
+            <div class="text-xs text-gray-500">{{ getCustomer(row.customer_id).email }}</div>
+            <div class="text-xs text-gray-500">{{ getCustomer(row.customer_id).phone }}</div>
+          </div>
+          <span v-else class="text-gray-400">Unknown Customer</span>
+        </template>
         <template #total_value-data="{ row }">
           {{ formatCurrency(row.total_value) }}
         </template>
@@ -95,6 +103,7 @@ const columns = [
 ]
 
 const customerOptions = computed(() => customers.value.map(c => ({ label: c.name, value: c.id })))
+const getCustomer = (id: string) => customers.value.find(c => c.id === id)
 const formatCurrency = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val || 0)
 const getStatusColor = (status: string) => ({ draft: 'gray', active: 'green', expired: 'orange', cancelled: 'red' }[status] || 'gray')
 

@@ -52,30 +52,14 @@ export const MENUS = [
         label: 'Manufacturing',
         icon: 'i-heroicons-wrench-screwdriver',
         children: [
-            {
-                label: 'MRP',
-                children: [
-                    { label: 'MRP Run', to: '/manufacturing/mrp/run' },
-                    { label: 'MPS', to: '/manufacturing/mrp/mps' },
-                    { label: 'Demand Forecasting', to: '/manufacturing/mrp/forecast' },
-                    { label: 'Net Requirements', to: '/manufacturing/mrp/requirements' },
-                    { label: 'MRP Exceptions', to: '/manufacturing/mrp/exceptions' },
-                    { label: 'Analytics', to: '/manufacturing/mrp/analytics' }
-                ]
-            },
+            { label: 'MRP', to: '/manufacturing/mrp' },
             { label: 'Categories', to: '/manufacturing/categories' },
             { label: 'Work Centers', to: '/manufacturing/work-centers' },
             { label: 'Products & BOM', to: '/manufacturing/products' },
-            { label: 'Routing', to: '/manufacturing/routings' },
-            { label: 'Production Orders', to: '/manufacturing/production-orders' },
-            {
-                label: 'Work Orders',
-                children: [
-                    { label: 'Open Work Orders', to: '/manufacturing/work-orders' },
-                    { label: 'WO Dashboard', to: '/manufacturing/work-orders/dashboard' }
-                ]
-            },
-            { label: 'Quality Control', to: '/manufacturing/qc' },
+            { label: 'Routing', to: '/manufacturing/routing' },
+            { label: 'Production Orders', to: '/manufacturing/production' },
+            { label: 'Work Orders', to: '/manufacturing/work-orders' },
+            { label: 'Quality Control', to: '/manufacturing/quality' },
             { label: 'Analytics', to: '/manufacturing/analytics' }
         ]
     },

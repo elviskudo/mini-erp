@@ -38,6 +38,12 @@
 
     <UCard :ui="{ body: { padding: 'p-0' } }">
       <ServerDataTable :columns="columns" :data="items" :loading="loading" :pagination="pagination" @page-change="handlePageChange">
+        <template #salesperson_id-data="{ row }">
+          <div class="flex flex-col">
+            <span class="font-medium text-gray-900">{{ getUser(row.salesperson_id)?.name || 'Unknown' }}</span>
+            <span class="text-xs text-gray-500">{{ getUser(row.salesperson_id)?.email }}</span>
+          </div>
+        </template>
         <template #order_amount-data="{ row }">
           {{ formatCurrency(row.order_amount) }}
         </template>
@@ -127,6 +133,9 @@ const getActions = (row: any) => [[
     { label: 'Mark Paid', icon: 'i-heroicons-banknotes', click: () => updateStatus(row.id, 'paid'), disabled: row.status !== 'approved' },
     { label: 'Cancel', icon: 'i-heroicons-x-mark', click: () => updateStatus(row.id, 'cancelled') }
 ]]
+
+const getUser = (id: string) => users.value.find(u => u.id === id)
+
 
 const form = reactive({ salesperson_id: '', order_id: '', invoice_id: '', order_amount: 0, rate: 5, amount: 0, notes: '' })
 

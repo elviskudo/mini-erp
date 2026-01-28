@@ -245,7 +245,7 @@ const fetchData = async () => {
   try {
     const [grnRes, poRes, whRes] = await Promise.all([
       $api.get('/procurement/grns').catch(() => ({ data: [] })),
-      $api.get('/procurement/orders').catch(() => ({ data: [] })),
+      $api.get('/procurement/purchase-orders').catch(() => ({ data: [] })),
       $api.get('/inventory/warehouses').catch(() => ({ data: [] }))
     ])
     grns.value = grnRes.data || []

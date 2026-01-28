@@ -56,6 +56,8 @@ func Connect() error {
 		&models.CustomerCall{},
 		&models.CustomerMeeting{},
 		&models.CustomerDocument{},
+		&models.Promo{},
+		&models.EmailBroadcast{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)

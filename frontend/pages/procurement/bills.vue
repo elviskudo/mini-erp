@@ -306,11 +306,11 @@ const fetchData = async () => {
     const [billsRes, vendorRes, poRes] = await Promise.all([
       $api.get('/procurement/bills'),
       $api.get('/procurement/vendors'),
-      $api.get('/procurement/orders')
+      $api.get('/procurement/purchase-orders')
     ])
-    bills.value = billsRes.data || []
-    vendors.value = vendorRes.data || []
-    purchaseOrders.value = poRes.data || []
+    bills.value = billsRes.data?.data || []
+    vendors.value = vendorRes.data?.data || []
+    purchaseOrders.value = poRes.data?.data || []
   } catch (e) {
     console.error(e)
   } finally {

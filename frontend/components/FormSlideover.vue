@@ -1,5 +1,5 @@
 <template>
-  <USlideover v-model="modelValue" :ui="{ width: 'w-screen max-w-md' }">
+  <USlideover v-model="modelValue" :ui="{ width: width }">
     <div class="flex flex-col h-full">
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b">
@@ -38,11 +38,13 @@ const props = withDefaults(defineProps<{
   cancelLabel?: string
   loading?: boolean
   disabled?: boolean
+  width?: string
 }>(), {
   submitLabel: 'Save',
   cancelLabel: 'Cancel',
   loading: false,
-  disabled: false
+  disabled: false,
+  width: 'w-screen max-w-md'
 })
 
 const emit = defineEmits<{

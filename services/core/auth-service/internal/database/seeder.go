@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/elviskudo/mini-erp/services/auth-service/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -42,8 +43,17 @@ func SeedMenus() error {
 func seedRecursive(tx *gorm.DB, item SeedMenuItem, parentID *string, order int) ([]string, error) {
 	var touchedIDs []string
 
+	// Generate unique code: use path if available, else combine UUID to make it unique
+	code := item.Label
+	if item.To != nil && *item.To != "" {
+		code = *item.To // Path is unique
+	} else {
+		// For parent menus without path, append UUID suffix
+		code = item.Label + "-" + uuid.New().String()[:8]
+	}
+
 	menu := models.Menu{
-		Code:      item.Label, // Use Label as Code for simplicity
+		Code:      code,
 		Label:     item.Label,
 		Icon:      item.Icon,
 		Path:      item.To,
@@ -69,8 +79,8 @@ func seedRecursive(tx *gorm.DB, item SeedMenuItem, parentID *string, order int) 
 			return nil, err
 		}
 	} else {
-		// Create
-		menu.ID = "" // Let GORM generate UUID
+		// Create - generate UUID in Go
+		menu.ID = uuid.New().String()
 		if err := tx.Create(&menu).Error; err != nil {
 			return nil, err
 		}
@@ -150,23 +160,13 @@ func getSeedMenus() []SeedMenuItem {
 
 		// 5. Manufacturing
 		{Label: "Manufacturing", Icon: strPtr("i-heroicons-wrench-screwdriver"), Children: []SeedMenuItem{
-			{Label: "MRP", Children: []SeedMenuItem{
-				{Label: "MRP Run", To: strPtr("/manufacturing/mrp/run")},
-				{Label: "Master Schedule (MPS)", To: strPtr("/manufacturing/mrp/mps")},
-				{Label: "Demand Forecasting", To: strPtr("/manufacturing/mrp/forecast")},
-				{Label: "Net Requirements", To: strPtr("/manufacturing/mrp/requirements")},
-				{Label: "MRP Exceptions", To: strPtr("/manufacturing/mrp/exceptions")},
-				{Label: "Analytics MRP", To: strPtr("/manufacturing/mrp/analytics")},
-			}},
+			{Label: "MRP", To: strPtr("/manufacturing/mrp")},
 			{Label: "Categories", To: strPtr("/manufacturing/categories")},
 			{Label: "Work Centers", To: strPtr("/manufacturing/work-centers")},
 			{Label: "Products & BOM", To: strPtr("/manufacturing/products")},
 			{Label: "Routing", To: strPtr("/manufacturing/routing")},
 			{Label: "Production Orders", To: strPtr("/manufacturing/production")},
-			{Label: "Work Orders", Children: []SeedMenuItem{
-				{Label: "Open Work Orders", To: strPtr("/manufacturing/work-orders/open")},
-				{Label: "Dashboard", To: strPtr("/manufacturing/work-orders/dashboard")},
-			}},
+			{Label: "Work Orders", To: strPtr("/manufacturing/work-orders")},
 			{Label: "Quality Control", To: strPtr("/manufacturing/quality")},
 			{Label: "Analytics", To: strPtr("/manufacturing/analytics")},
 		}},

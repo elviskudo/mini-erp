@@ -100,6 +100,7 @@ func setupRoutes(rg *gin.RouterGroup, h *handlers.SalesHandler) {
 	rg.POST("/credit-notes", h.CreateCreditNote)
 	rg.GET("/credit-notes/:id", h.GetCreditNote)
 	rg.PUT("/credit-notes/:id", h.UpdateCreditNote)
+	rg.DELETE("/credit-notes/:id", h.DeleteCreditNote)
 
 	// Payments
 	rg.GET("/payments", h.ListPayments)

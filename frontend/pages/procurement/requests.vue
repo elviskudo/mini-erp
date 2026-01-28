@@ -70,123 +70,150 @@
     </UModal>
 
     <!-- Create PR Slideover - 1/3 page width -->
-    <USlideover v-model="isCreateOpen" :ui="{ width: 'w-screen max-w-xl' }">
-      <div class="flex flex-col h-full">
-        <div class="flex items-center justify-between px-6 py-4 border-b">
-          <h3 class="text-lg font-semibold">New Purchase Request</h3>
-          <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="isCreateOpen = false" />
+    <FormSlideover
+      v-model="isCreateOpen"
+      title="New Purchase Request"
+      submit-label="Submit Request"
+      :loading="submitting"
+      :disabled="!isFormValid"
+      @submit="createPr"
+    >
+      <div class="space-y-4">
+        <!-- Header Fields -->
+        <div class="grid grid-cols-2 gap-4">
+          <UFormGroup label="Priority" required hint="Urgency level" :ui="{ hint: 'text-xs text-gray-400' }">
+            <USelect v-model="form.priority" :options="priorityOptions" />
+          </UFormGroup>
+          <UFormGroup label="Required Date" required hint="When items are needed" :ui="{ hint: 'text-xs text-gray-400' }">
+            <UInput v-model="form.required_date" type="date" />
+          </UFormGroup>
         </div>
-        
-        <div class="flex-1 overflow-y-auto p-6">
-          <div class="space-y-4">
-            <div class="space-y-3">
-              <div v-for="(item, index) in form.items" :key="index" class="p-4 bg-gray-50 rounded-lg space-y-3">
-                <div class="flex gap-3 items-end">
-                  <UFormGroup label="Product" class="flex-1" required>
-                    <USelect 
-                      v-model="item.product_id" 
-                      :options="products" 
-                      option-attribute="name" 
-                      value-attribute="id" 
-                      placeholder="Select Product"
-                      @change="onProductChange(index)"
-                    />
-                  </UFormGroup>
-                  <UFormGroup label="Qty" class="w-24" required>
-                    <UInput 
-                      v-model="item.quantity" 
-                      type="number" 
-                      min="1" 
-                      :max="item.max_stock || 99999"
-                      @blur="onQtyBlur(index)"
-                    />
-                  </UFormGroup>
-                  <UButton 
-                    icon="i-heroicons-trash" 
-                    color="red" 
-                    variant="ghost" 
-                    class="mb-0.5"
-                    :disabled="form.items.length === 1"
-                    @click="removeItem(index)" 
+
+        <UFormGroup label="Notes" hint="Additional instructions or justification" :ui="{ hint: 'text-xs text-gray-400' }">
+          <UTextarea v-model="form.notes" rows="3" placeholder="e.g. For project Alpha..." />
+        </UFormGroup>
+
+        <!-- Items Section -->
+        <div class="border-t pt-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h4 class="text-sm font-medium text-gray-900">Request Items</h4>
+              <p class="text-xs text-gray-500">List products to purchase</p>
+            </div>
+            <UButton size="xs" icon="i-heroicons-plus" variant="soft" @click="addItem">Add Item</UButton>
+          </div>
+
+          <div class="space-y-3">
+            <div v-for="(item, index) in form.items" :key="index" class="p-3 bg-gray-50 rounded-lg space-y-3 border border-gray-100">
+              <div class="flex gap-3 items-start">
+                <UFormGroup label="Product" class="flex-1" required :ui="{ label: 'text-xs mb-1' }">
+                  <USelectMenu 
+                    v-model="item.product_id" 
+                    :options="products" 
+                    option-attribute="name" 
+                    value-attribute="id" 
+                    placeholder="Search Product..."
+                    searchable
+                    @change="onProductChange(index)"
+                  >
+                    <template #option="{ option }">
+                        <div class="flex flex-col">
+                            <span class="font-medium">{{ option.name }}</span>
+                            <span class="text-xs text-gray-400">{{ option.code }}</span>
+                        </div>
+                    </template>
+                  </USelectMenu>
+                </UFormGroup>
+                <UFormGroup label="Qty" class="w-24" required :ui="{ label: 'text-xs mb-1' }">
+                  <UInput 
+                    v-model="item.quantity" 
+                    type="number" 
+                    min="1" 
+                    :max="item.max_stock || 99999"
+                    @blur="onQtyBlur(index)"
                   />
+                </UFormGroup>
+                <UButton 
+                  icon="i-heroicons-trash" 
+                  color="red" 
+                  variant="ghost" 
+                  class="mt-6"
+                  size="xs"
+                  :disabled="form.items.length === 1"
+                  @click="removeItem(index)" 
+                />
+              </div>
+              
+              <!-- Stock Info Display -->
+              <div v-if="item.stock_info" class="text-xs bg-white p-2 rounded border border-gray-100">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-gray-500">Available Stock:</span>
+                  <span class="font-medium text-green-600">{{ item.stock_info.available_stock }} {{ item.product?.uom || 'Units' }}</span>
                 </div>
-                <!-- Stock Info Display -->
-                <div v-if="item.stock_info" class="text-sm">
-                  <p class="text-green-600 font-medium">
-                    <span class="i-heroicons-check-circle inline-block mr-1"></span>
-                    Stok tersedia: {{ item.stock_info.available_stock }} unit
-                  </p>
-                  <div v-if="item.stock_info.warehouses?.length" class="mt-1 text-gray-600">
-                    <span v-for="(wh, idx) in item.stock_info.warehouses" :key="idx" class="mr-3">
-                      📦 {{ wh.warehouse_name }} ({{ wh.location_code }}): {{ wh.quantity }}
-                    </span>
+                <div v-if="item.stock_info.warehouses?.length" class="space-y-1">
+                  <div v-for="(wh, idx) in item.stock_info.warehouses" :key="idx" class="flex justify-between text-gray-400">
+                    <span>{{ wh.warehouse_name }}</span>
+                    <span>{{ wh.quantity }}</span>
                   </div>
                 </div>
-                <!-- Stock Error Display -->
-                <div v-if="item.stock_error" class="text-sm text-red-600">
-                  <span class="i-heroicons-exclamation-triangle inline-block mr-1"></span>
-                  {{ item.stock_error }}
-                </div>
+              </div>
+
+              <!-- Stock Error Display -->
+              <div v-if="item.stock_error" class="text-xs text-red-600 flex items-center gap-1">
+                <UIcon name="i-heroicons-exclamation-triangle" class="w-3 h-3" />
+                {{ item.stock_error }}
               </div>
             </div>
-            
-            <UButton size="sm" icon="i-heroicons-plus" variant="soft" @click="addItem">Add Item</UButton>
+          </div>
+          
+          <div v-if="form.items.length === 0" class="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-dashed">
+            No items added. Click "Add Item" to start.
           </div>
         </div>
-        
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-          <UButton variant="ghost" @click="isCreateOpen = false">Cancel</UButton>
-          <UButton :loading="submitting" :disabled="!isFormValid" @click="createPr">Submit Request</UButton>
-        </div>
       </div>
-    </USlideover>
+    </FormSlideover>
 
     <!-- Convert to PO Slideover -->
-    <USlideover v-model="isConvertOpen" :ui="{ width: 'w-screen max-w-md' }">
-      <div class="flex flex-col h-full">
-        <div class="flex items-center justify-between px-6 py-4 border-b">
-          <h3 class="text-lg font-semibold">Convert PR to PO</h3>
-          <UButton icon="i-heroicons-x-mark" color="gray" variant="ghost" @click="isConvertOpen = false" />
-        </div>
+    <FormSlideover
+      v-model="isConvertOpen"
+      title="Convert PR to PO"
+      submit-label="Generate PO"
+      :loading="submitting"
+      :disabled="!convertForm.vendor_id"
+      @submit="convertToPo"
+    >
+      <div class="space-y-4">
+        <UFormGroup label="Select Vendor" required hint="Choose supplier for this purchase order" :ui="{ hint: 'text-xs text-gray-400' }">
+          <USelect v-model="convertForm.vendor_id" :options="vendors" option-attribute="name" value-attribute="id" placeholder="Search and select vendor..." />
+        </UFormGroup>
         
-        <div class="flex-1 overflow-y-auto p-6 space-y-4">
-          <UFormGroup label="Select Vendor" required hint="Choose supplier for this purchase order" :ui="{ hint: 'text-xs text-gray-400' }">
-            <USelect v-model="convertForm.vendor_id" :options="vendors" option-attribute="name" value-attribute="id" placeholder="Search and select vendor..." />
-          </UFormGroup>
-          
-          <div v-if="selectedPr" class="border-t pt-4">
-            <div class="flex items-center justify-between mb-3">
-              <p class="text-sm font-medium">Set Unit Prices</p>
-              <p class="text-xs text-gray-400">Enter price per unit for each item</p>
-            </div>
-            <div class="space-y-3">
-              <div v-for="item in selectedPr.items" :key="item.id" class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <p class="font-medium">{{ item.product?.name }}</p>
-                  <p class="text-sm text-gray-500">Qty: {{ item.quantity }}</p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-500 text-sm">Rp</span>
-                  <UInput 
-                    v-model="convertForm.price_map[item.product_id]" 
-                    type="number" 
-                    placeholder="0" 
-                    class="w-32"
-                    :ui="{ icon: { trailing: { pointer: '' } } }"
-                  />
-                </div>
+        <div v-if="selectedPr" class="border-t pt-4">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm font-medium">Set Unit Prices</p>
+            <p class="text-xs text-gray-400">Enter price per unit for each item</p>
+          </div>
+          <div class="space-y-3">
+            <div v-for="item in selectedPr.items" :key="item.id" class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+              <div>
+                <p class="font-medium">{{ item.product?.name }}</p>
+                <p class="text-sm text-gray-500">Qty: {{ item.quantity }}</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-sm">Rp</span>
+                <UInput 
+                  v-model="convertForm.price_map[item.product_id]" 
+                  type="number" 
+                  placeholder="0" 
+                  class="w-32"
+                  :ui="{ icon: { trailing: { pointer: '' } } }"
+                />
               </div>
             </div>
-            <p class="text-xs text-gray-400 mt-2">* Total = Qty × Unit Price for each item</p>
           </div>
-        </div>
-        
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-          <UButton variant="ghost" @click="isConvertOpen = false">Cancel</UButton>
-          <UButton :loading="submitting" :disabled="!convertForm.vendor_id" @click="convertToPo">Generate PO</UButton>
+          <p class="text-xs text-gray-400 mt-2">* Total = Qty × Unit Price for each item</p>
         </div>
       </div>
-    </USlideover>
+    </FormSlideover>
 
     <!-- PR Detail Modal -->
     <UModal v-model="isDetailOpen" :ui="{ width: 'sm:max-w-2xl' }">
@@ -255,6 +282,7 @@ definePageMeta({
 })
 
 const authStore = useAuthStore()
+const { $api } = useNuxtApp()
 const toast = useToast()
 const isCreateOpen = ref(false)
 const isConvertOpen = ref(false)
@@ -323,8 +351,13 @@ const isFormValid = computed(() => {
 })
 
 const form = reactive({
+    priority: 'Normal',
+    required_date: new Date().toISOString().split('T')[0],
+    notes: '',
     items: [] as any[]
 })
+
+const priorityOptions = ['Low', 'Normal', 'High']
 
 const convertForm = reactive({
     vendor_id: '',
@@ -436,15 +469,14 @@ const downloadFile = (content: string, filename: string, type: string) => {
 const fetchData = async () => {
     loading.value = true
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
         const [prRes, prodRes, vendRes]: any = await Promise.all([
-            $fetch('/api/procurement/pr', { headers }),
-            $fetch('/api/manufacturing/products', { headers }),
-            $fetch('/api/procurement/vendors', { headers })
+            $api.get('/procurement/purchase-requests'),
+            $api.get('/manufacturing/products'),
+            $api.get('/procurement/vendors')
         ])
-        prs.value = prRes
-        products.value = prodRes
-        vendors.value = vendRes
+        prs.value = prRes.data.data || prRes 
+        products.value = prodRes.data.data || prodRes
+        vendors.value = vendRes.data.data || vendRes
     } catch (e) { console.error(e) } 
     finally { loading.value = false }
 }
@@ -452,6 +484,37 @@ const fetchData = async () => {
 const openCreateModal = () => {
     form.items = [{ product_id: '', quantity: 1, stock_info: null, stock_error: null, max_stock: 0 }]
     isCreateOpen.value = true
+}
+
+const openDetailModal = (pr: any) => {
+    detailPr.value = pr
+    isDetailOpen.value = true
+}
+
+const openApproveModal = (id: string) => {
+    approvePrId.value = id
+    isApproveOpen.value = true
+}
+
+const openRejectModal = (id: string) => {
+    selectedPrId.value = id
+    rejectReason.value = ''
+    isRejectOpen.value = true
+}
+
+const openConvertModal = (pr: any) => {
+    selectedPr.value = pr
+    convertForm.vendor_id = ''
+    convertForm.price_map = {}
+    
+    // Initialize price map from items
+    pr.items?.forEach((item: any) => {
+        if (item.product_id) {
+            convertForm.price_map[item.product_id] = 0 // Default price could be fetched from product cost
+        }
+    })
+    
+    isConvertOpen.value = true
 }
 
 const addItem = () => form.items.push({ product_id: '', quantity: 1, stock_info: null, stock_error: null, max_stock: 0 })
@@ -467,15 +530,23 @@ const onProductChange = async (index: number) => {
     }
     
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
-        const stockData: any = await $fetch(`/api/procurement/stock/${item.product_id}`, { headers })
-        item.stock_info = stockData
-        item.max_stock = stockData.available_stock
+        // Fetch stock batches from inventory service
+        const stockBatches: any[] = await $api.get(`/inventory/stock?product_id=${item.product_id}`)
+        
+        // Calculate total available stock
+        const totalStock = stockBatches.reduce((sum: number, batch: any) => sum + (batch.quantity || 0), 0)
+        
+        item.stock_info = {
+            available_stock: totalStock,
+            warehouses: stockBatches.map(b => ({ warehouse_name: b.warehouse_id, location_code: 'N/A', quantity: b.quantity })) // Simplified mapping
+        }
+
+        item.max_stock = totalStock
         item.stock_error = null
         
         // Auto-set qty to available stock if it's less than current qty
-        if (item.quantity > stockData.available_stock) {
-            item.quantity = stockData.available_stock
+        if (item.quantity > totalStock) {
+            item.quantity = totalStock
         }
     } catch (e) {
         item.stock_info = null
@@ -488,11 +559,13 @@ const onQtyBlur = async (index: number) => {
     if (!item.product_id || !item.quantity) return
     
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
-        const stockData: any = await $fetch(`/api/procurement/stock/${item.product_id}`, { headers })
+        const stockBatches: any[] = await $api.get(`/inventory/stock?product_id=${item.product_id}`)
         
-        if (item.quantity > stockData.available_stock) {
-            item.stock_error = `Qty (${item.quantity}) melebihi stok tersedia (${stockData.available_stock})`
+        // Calculate total available stock
+        const available_stock = stockBatches.reduce((sum: number, batch: any) => sum + (batch.quantity || 0), 0)
+        
+        if (item.quantity > available_stock) {
+            item.stock_error = `Qty (${item.quantity}) melebihi stok tersedia (${available_stock})`
         } else {
             item.stock_error = null
         }
@@ -504,12 +577,7 @@ const onQtyBlur = async (index: number) => {
 const createPr = async () => {
     submitting.value = true
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
-        await $fetch('/api/procurement/pr', {
-            method: 'POST',
-            headers,
-            body: form
-        })
+        await $api.post('/procurement/purchase-requests', form)
         toast.add({ title: 'Success', description: 'Purchase request created.' })
         isCreateOpen.value = false
         fetchData()
@@ -519,17 +587,11 @@ const createPr = async () => {
     finally { submitting.value = false }
 }
 
-const openApproveModal = (id: string) => {
-    approvePrId.value = id
-    isApproveOpen.value = true
-}
-
 const doApprove = async () => {
     if (!approvePrId.value) return
     submitting.value = true
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
-        await $fetch(`/api/procurement/pr/${approvePrId.value}/approve`, { method: 'POST', headers })
+        await $api.post(`/procurement/purchase-requests/${approvePrId.value}/approve`, {})
         toast.add({ 
             title: '✅ Approved!', 
             description: 'Purchase Request berhasil di-approve.',
@@ -537,23 +599,14 @@ const doApprove = async () => {
         })
         isApproveOpen.value = false
         fetchData()
-    } catch (e) { 
-        toast.add({ title: 'Error', description: 'Failed to approve.', color: 'red' })
+    } catch (e: any) { 
+        toast.add({ title: 'Error', description: e.response?._data?.message || 'Failed to approve.', color: 'red' })
     } finally {
         submitting.value = false
     }
 }
 
-const openDetailModal = (pr: any) => {
-    detailPr.value = pr
-    isDetailOpen.value = true
-}
-
-const openRejectModal = (id: string) => {
-    selectedPrId.value = id
-    rejectReason.value = ''
-    isRejectOpen.value = true
-}
+// ... (skip detail modal)
 
 const rejectPr = async () => {
     if (!rejectReason.value.trim()) {
@@ -563,12 +616,7 @@ const rejectPr = async () => {
     
     submitting.value = true
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
-        await $fetch(`/api/procurement/pr/${selectedPrId.value}/reject`, { 
-            method: 'POST', 
-            headers,
-            body: { reason: rejectReason.value }
-        })
+        await $api.post(`/procurement/purchase-requests/${selectedPrId.value}/reject`, { reason: rejectReason.value })
         toast.add({ 
             title: '❌ Rejected', 
             description: 'Purchase Request berhasil di-reject.',
@@ -583,28 +631,16 @@ const rejectPr = async () => {
     }
 }
 
-const openConvertModal = (pr: any) => {
-    selectedPr.value = pr
-    convertForm.vendor_id = ''
-    convertForm.price_map = {}
-    isConvertOpen.value = true
-}
-
 const convertToPo = async () => {
     if (!selectedPr.value) return
     submitting.value = true
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
         const payload = {
             pr_id: selectedPr.value.id,
             vendor_id: convertForm.vendor_id,
             price_map: convertForm.price_map
         }
-        await $fetch('/api/procurement/po/create_from_pr', {
-            method: 'POST',
-            headers,
-            body: payload
-        })
+        await $api.post('/procurement/purchase-orders/from-pr', payload)
         toast.add({ title: 'Success', description: 'PO Created!' })
         isConvertOpen.value = false
         fetchData()

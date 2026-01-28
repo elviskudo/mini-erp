@@ -144,7 +144,7 @@ Mock Data for Pending POs for now until backend updated
 // REAL LOGIC (assuming endpoint exists shortly)
 const fetchPos = async () => {
     try {
-        const res = await $api.get('/procurement/orders') // Need to implement this!
+        const res = await $api.get('/procurement/purchase-orders') // Need to implement this!
         pendingPos.value = res.data
             .filter(p => p.status === 'OPEN' || p.status === 'PARTIAL_RECEIVE')
             .map(p => ({

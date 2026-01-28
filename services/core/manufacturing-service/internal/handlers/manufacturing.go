@@ -8,6 +8,7 @@ import (
 	"github.com/elviskudo/mini-erp/services/manufacturing-service/internal/models"
 	"github.com/elviskudo/mini-erp/services/manufacturing-service/internal/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -114,6 +115,7 @@ func (h *ManufacturingHandler) CreateCategory(c *gin.Context) {
 		IsActive:    isActive,
 	}
 
+	category.ID = uuid.New().String()
 	if err := db.Create(&category).Error; err != nil {
 		response.InternalError(c, "Failed to create category")
 		return
@@ -293,6 +295,7 @@ func (h *ManufacturingHandler) CreateWorkCenter(c *gin.Context) {
 	}
 
 	// Save to database
+	workCenter.ID = uuid.New().String()
 	if err := db.Create(&workCenter).Error; err != nil {
 		response.InternalError(c, "Failed to create work center: "+err.Error())
 		return
@@ -947,6 +950,8 @@ func (h *ManufacturingHandler) CreateWorkOrder(c *gin.Context) {
 		PlannedQty:        req.PlannedQty,
 	}
 
+	workOrder.ID = uuid.New().String()
+
 	if err := db.Create(&workOrder).Error; err != nil {
 		response.InternalError(c, "Failed to create work order: "+err.Error())
 		return
@@ -1154,6 +1159,13 @@ func (h *ManufacturingHandler) CreateRouting(c *gin.Context) {
 		Name:      req.Name,
 		Version:   req.Version,
 		IsActive:  &isActive,
+	}
+
+	routing.ID = uuid.New().String()
+	for i := range routing.Steps {
+		routing.Steps[i].ID = uuid.New().String()
+		routing.Steps[i].RoutingID = routing.ID
+		routing.Steps[i].TenantID = tenantID
 	}
 
 	if err := db.Create(&routing).Error; err != nil {

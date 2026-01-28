@@ -251,8 +251,8 @@ const fetchData = async () => {
       $api.get('/procurement/bills'),
       $api.get('/procurement/payments')
     ])
-    bills.value = billsRes.data || []
-    payments.value = paymentsRes.data || []
+    bills.value = billsRes.data.data || []
+    payments.value = paymentsRes.data.data || []
   } catch (e) {
     console.error(e)
   } finally {

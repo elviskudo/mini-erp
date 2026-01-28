@@ -316,7 +316,7 @@ const getStatusColor = (status: string) => {
 // Helper to safely extract array from API response
 const extractArray = (res: any): any[] => {
   if (Array.isArray(res)) return res
-  if (res?.data && Array.isArray(res.data)) return res.data
+  // if (res?.data && Array.isArray(res.data)) return res.data
   if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data
   return []
 }

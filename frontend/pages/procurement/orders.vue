@@ -71,7 +71,7 @@
     </UCard>
 
     <!-- View Order Modal -->
-    <UModal v-model="showViewModal" :ui="{ width: 'w-full sm:max-w-3xl' }">
+    <UModal v-model="showViewModal">
       <UCard v-if="selectedOrder">
         <template #header>
           <div class="flex items-center justify-between">
@@ -145,7 +145,7 @@
     </UModal>
 
     <!-- Receive Goods Modal -->
-    <UModal v-model="showReceiveModal" :ui="{ width: 'w-full sm:max-w-2xl' }">
+    <UModal v-model="showReceiveModal">
       <UCard>
         <template #header>
           <h3 class="text-lg font-semibold">Receive Goods - {{ receiveOrder?.po_number || receiveOrder?.id?.slice(0, 8) }}</h3>
@@ -439,9 +439,9 @@ const downloadFile = (content: string, filename: string, type: string) => {
 const fetchPos = async () => {
   loading.value = true
   try {
-    const headers = { Authorization: `Bearer ${authStore.token}` }
-    const res: any = await $fetch('/api/procurement/orders', { headers })
-    orders.value = res
+    const { $api } = useNuxtApp()
+    const res = await $api.get('/procurement/purchase-orders')
+    orders.value = res.data?.data || []
   } catch (e) {
     console.error(e)
     orders.value = []
@@ -457,12 +457,10 @@ const viewOrder = (row: any) => {
 
 const downloadPdf = async (row: any) => {
   try {
-    const headers = { Authorization: `Bearer ${authStore.token}` }
-    const response = await fetch(`/api/procurement/orders/${row.id}/pdf`, { headers })
+    const { $api } = useNuxtApp()
+    const response = await $api.get(`/procurement/purchase-orders/${row.id}/pdf`, { responseType: 'blob' })
     
-    if (!response.ok) throw new Error('Failed to download PDF')
-    
-    const blob = await response.blob()
+    const blob = new Blob([response.data], { type: 'application/pdf' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -492,11 +490,9 @@ const openSendModal = (row: any) => {
 const confirmSendToVendor = async () => {
   if (!sendingPo.value) return
   try {
-    const headers = { Authorization: `Bearer ${authStore.token}` }
-    await $fetch(`/api/procurement/orders/${sendingPo.value.id}/send`, { 
-      method: 'POST', 
-      headers,
-      body: { notes: sendNotes.value }
+    const { $api } = useNuxtApp()
+    await $api.post(`/procurement/purchase-orders/${sendingPo.value.id}/send`, { 
+      notes: sendNotes.value 
     })
     showSendModal.value = false
     toast.add({ 
@@ -534,7 +530,7 @@ const submitReceive = async () => {
   submitting.value = true
   try {
     const headers = { Authorization: `Bearer ${authStore.token}` }
-    await $fetch(`/api/procurement/orders/${receiveOrder.value.id}/receive`, {
+    await $fetch(`/api/v1/procurement/purchase-orders/${receiveOrder.value.id}/receive`, {
       method: 'POST',
       headers,
       body: {

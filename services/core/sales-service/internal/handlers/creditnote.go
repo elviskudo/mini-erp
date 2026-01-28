@@ -102,6 +102,17 @@ func (h *SalesHandler) UpdateCreditNote(c *gin.Context) {
 	response.Success(c, body, "Credit note updated")
 }
 
+func (h *SalesHandler) DeleteCreditNote(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := database.GetDB().Delete(&models.CreditNote{}, "id = ?", id).Error; err != nil {
+		response.Err(c, 500, "Failed to delete credit note: "+err.Error())
+		return
+	}
+
+	response.Success(c, nil, "Credit note deleted")
+}
+
 // === Payment Records ===
 
 func (h *SalesHandler) ListPayments(c *gin.Context) {

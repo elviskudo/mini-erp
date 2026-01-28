@@ -98,6 +98,7 @@ func setupRoutes(auth *gin.RouterGroup, h *handlers.AuthHandler) {
 	auth.POST("/logout", h.Logout)
 	auth.GET("/user-tenants", h.GetUserTenants) // Get tenants for current user
 	auth.POST("/switch-tenant", h.SwitchTenant) // Switch to different tenant
+	auth.GET("/users", h.ListUsers)             // List users
 }
 
 // setupMenuRoutes sets up menu routes (separate from auth group)

@@ -257,9 +257,9 @@ const fetchData = async () => {
       $api.get('/manufacturing/products'),
       $api.get('/procurement/vendors')
     ])
-    rfqs.value = rfqRes.data || []
-    products.value = prodRes.data || []
-    vendors.value = vendorRes.data || []
+    rfqs.value = rfqRes.data?.data || rfqRes.data || []
+    products.value = prodRes.data?.data || prodRes.data || []
+    vendors.value = vendorRes.data?.data || vendorRes.data || []
   } catch (e) {
     console.error(e)
   } finally {

@@ -37,6 +37,7 @@
         </template>
         <template #actions-data="{ row }">
           <div class="flex gap-1">
+            <UButton icon="i-heroicons-eye" color="gray" variant="ghost" size="xs" @click="openDetail(row)" />
             <UButton icon="i-heroicons-pencil" color="gray" variant="ghost" size="xs" @click="openEdit(row)" />
             <UButton 
               v-if="canDelete"
@@ -153,6 +154,73 @@
         </template>
       </UCard>
     </UModal>
+
+    <!-- Detail Modal -->
+    <UModal v-model="isDetailModalOpen" :ui="{ width: 'sm:max-w-3xl' }">
+      <UCard>
+        <template #header>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <UIcon name="i-heroicons-information-circle" class="w-6 h-6 text-blue-600" />
+              <span class="font-semibold text-lg">{{ detailTarget?.name }}</span>
+            </div>
+            <UBadge :color="detailTarget?.is_active ? 'green' : 'red'" variant="soft">
+              {{ detailTarget?.is_active ? 'Active' : 'Inactive' }}
+            </UBadge>
+          </div>
+        </template>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="space-y-4">
+            <div>
+              <h4 class="text-xs font-semibold text-gray-500 uppercase">General Info</h4>
+              <div class="mt-2 grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span class="text-gray-500">Code:</span>
+                  <p class="font-medium">{{ detailTarget?.code }}</p>
+                </div>
+                <div>
+                  <span class="text-gray-500">Hourly Rate:</span>
+                  <p class="font-medium">{{ formatCurrency(detailTarget?.cost_per_hour || 0) }}</p>
+                </div>
+                <div>
+                  <span class="text-gray-500">Capacity:</span>
+                  <p class="font-medium">{{ detailTarget?.capacity_hours }} hrs/day</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="detailTarget?.open_time || detailTarget?.open_days">
+              <h4 class="text-xs font-semibold text-gray-500 uppercase mt-4">Operating Hours</h4>
+              <div class="mt-2 text-sm space-y-1">
+                <p v-if="detailTarget?.open_days"><span class="text-gray-500">Days:</span> {{ detailTarget?.open_days }}</p>
+                <p v-if="detailTarget?.open_time"><span class="text-gray-500">Time:</span> {{ detailTarget?.open_time }} - {{ detailTarget?.close_time }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <h4 class="text-xs font-semibold text-gray-500 uppercase">Location</h4>
+            <div class="text-sm">
+              <p class="text-gray-700 whitespace-pre-wrap">{{ detailTarget?.location || 'No address set' }}</p>
+              <p v-if="detailTarget?.latitude" class="text-xs text-cool-500 mt-1">
+                Global: {{ detailTarget?.latitude }}, {{ detailTarget?.longitude }}
+              </p>
+            </div>
+            <!-- Interactive Map Readonly -->
+            <ClientOnly>
+               <div id="detail-map" class="h-48 w-full rounded-lg border border-gray-200 mt-2"></div>
+            </ClientOnly>
+          </div>
+        </div>
+
+        <template #footer>
+          <div class="flex justify-end">
+            <UButton color="gray" variant="ghost" @click="isDetailModalOpen = false">Close</UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
   </div>
 </template>
 
@@ -186,6 +254,10 @@ const deleting = ref(false)
 // Status modal state
 const isStatusModalOpen = ref(false)
 const statusTarget = ref<any>(null)
+
+// Detail modal state
+const isDetailModalOpen = ref(false)
+const detailTarget = ref<any>(null)
 
 // Check if work center is primary (only one exists or first in list)
 const isPrimary = (row: any) => {
@@ -439,6 +511,44 @@ const confirmDeleteWorkCenter = async () => {
 const openStatusModal = (row: any) => {
     statusTarget.value = row
     isStatusModalOpen.value = true
+}
+
+const openDetail = (row: any) => {
+    detailTarget.value = row
+    isDetailModalOpen.value = true
+    setTimeout(() => initDetailMap(row), 300)
+}
+
+const initDetailMap = async (row: any) => {
+    if (typeof window === 'undefined' || !row.latitude || !row.longitude) return
+    
+    // Cleanup previous map if any unique ID used or just re-init
+    // Simple approach: Use Leaflet on specific ID
+    const L = await import('leaflet')
+    // Ensure CSS
+    if (!document.querySelector('link[href*="leaflet.css"]')) {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+        document.head.appendChild(link)
+    }
+
+    const container = document.getElementById('detail-map')
+    if (container) {
+        // Reset container content if needed or check if already init
+        // Leaflet doesn't like re-init on same element, typically remove _leaflet_id
+        // Better to remove innerHTML for clean slate if using vanilla logic
+         // But L.map throws error if container already has map. 
+         // Let's use a try-catch or check specific property
+         if ((container as any)._leaflet_id) {
+            (container as any)._leaflet_id = null; // Hacky clear
+            container.innerHTML = ''; 
+         }
+         
+        const map = L.map('detail-map').setView([row.latitude, row.longitude], 15)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map)
+        L.marker([row.latitude, row.longitude]).addTo(map)
+    }
 }
 
 const toggleStatus = async () => {

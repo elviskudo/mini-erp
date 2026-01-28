@@ -47,8 +47,8 @@ func main() {
 		pos.GET("/transactions/:id", h.GetTransaction)
 		pos.POST("/transactions/:id/void", h.VoidTransaction)
 		pos.GET("/promos", h.ListPromos)
-		pos.POST("/promos", h.CreatePromo)
-		pos.GET("/promos/validate/:code", h.ValidatePromo)
+		pos.GET("/promos/:code", h.GetPromoByCode)
+		pos.POST("/promos/apply", h.ApplyPromo)
 		pos.GET("/reports/daily", h.DailySalesReport)
 	}
 

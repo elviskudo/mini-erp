@@ -341,7 +341,7 @@ const fetchData = async () => {
     const [summaryRes, vendorsRes, ordersRes] = await Promise.all([
       $api.get(`/procurement/analytics/summary?period=${selectedPeriod.value}`).catch(() => ({ data: {} })),
       $api.get('/procurement/vendors').catch(() => ({ data: [] })),
-      $api.get('/procurement/orders').catch(() => ({ data: [] }))
+      $api.get('/procurement/purchase-orders').catch(() => ({ data: [] }))
     ])
     
     summary.value = summaryRes.data || {}

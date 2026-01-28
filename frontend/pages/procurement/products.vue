@@ -251,8 +251,8 @@ const fetchData = async () => {
       $api.get('/manufacturing/products'),
       $api.get('/procurement/vendors')
     ])
-    products.value = productsRes.data || []
-    vendors.value = vendorsRes.data || []
+    products.value = productsRes.data.data || []
+    vendors.value = vendorsRes.data.data || []
   } catch (e) {
     console.error(e)
   } finally {

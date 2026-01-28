@@ -231,7 +231,11 @@ func (h *InventoryHandler) UpdateProduct(c *gin.Context) {
 		product.Description = req.Description
 	}
 	if req.CategoryID != nil {
-		product.CategoryID = req.CategoryID
+		if *req.CategoryID == "" {
+			product.CategoryID = nil
+		} else {
+			product.CategoryID = req.CategoryID
+		}
 	}
 	if req.IsManufactured != nil {
 		product.IsManufactured = req.IsManufactured

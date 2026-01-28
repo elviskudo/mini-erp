@@ -214,7 +214,7 @@ const fetchPromos = async () => {
   loading.value = true
   try {
     const res = await $api.get('/crm/promos')
-    promos.value = res.data || []
+    promos.value = res.data.data || []
   } catch (e: any) {
     toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to load', color: 'red' })
   } finally {

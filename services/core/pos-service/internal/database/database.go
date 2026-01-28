@@ -9,6 +9,8 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"github.com/elviskudo/mini-erp/services/pos-service/internal/models"
 )
 
 var DB *gorm.DB
@@ -27,7 +29,14 @@ func Connect() error {
 	sqlDB, _ := DB.DB()
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	// Auto Migrate
+	err = DB.AutoMigrate(
+		&models.POSTransaction{},
+		&models.Promo{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to migrate database: %w", err)
+	}
 	log.Println("✅ POS Service: Database connected")
 	return nil
 }

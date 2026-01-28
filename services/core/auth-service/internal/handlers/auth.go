@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/elviskudo/mini-erp/services/auth-service/internal/database"
@@ -431,4 +432,58 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 			IsActive: membership.Tenant.IsActive,
 		},
 	}, "Tenant switched successfully")
+}
+
+// ListUsers lists users (filtered by tenant)
+// GET /auth/users
+func (h *AuthHandler) ListUsers(c *gin.Context) {
+	tenantID := c.GetHeader("X-Tenant-ID")
+
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not connected")
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+
+	var users []models.User
+	var total int64
+
+	query := db.Model(&models.User{})
+
+	// If tenant ID is present, filter users by tenant membership
+	if tenantID != "" {
+		query = query.Joins("JOIN tenant_members ON tenant_members.user_id = users.id").
+			Where("tenant_members.tenant_id = ?", tenantID)
+	}
+
+	query.Count(&total)
+
+	if err := query.Limit(limit).Offset(offset).Order("users.username asc").Find(&users).Error; err != nil {
+		response.InternalError(c, "Failed to fetch users")
+		return
+	}
+
+	userResponses := make([]models.UserResponse, len(users))
+	for i, user := range users {
+		userResponses[i] = models.UserResponse{
+			ID:         user.ID,
+			Username:   user.Username,
+			Email:      user.Email,
+			Role:       user.Role, // Global role, or should we fetch tenant role? Keeping simple for now
+			IsVerified: user.IsVerified,
+			TenantID:   user.TenantID, // Default tenant
+		}
+	}
+
+	response.SuccessList(c, userResponses, page, limit, total, "Users retrieved successfully")
 }

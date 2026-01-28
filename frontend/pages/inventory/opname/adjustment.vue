@@ -340,7 +340,7 @@ const getStatusColor = (status: string) => {
 const fetchPending = async () => {
   loading.value = true
   try {
-    const res = await $api.get('/opname/list')
+    const res = await $api.get('/inventory/opnames')
     pendingOpnames.value = (res.data || []).filter((o: any) => 
       ['Counting Done', 'Reviewed', 'Approved'].includes(o.status)
     )
@@ -353,7 +353,7 @@ const fetchPending = async () => {
 
 const viewDetails = async (opname: any) => {
   try {
-    const res = await $api.get(`/opname/${opname.id}`)
+    const res = await $api.get(`/inventory/opname/${opname.id}`)
     selectedOpname.value = res.data
     showDetailModal.value = true
   } catch (e) {
@@ -364,7 +364,7 @@ const viewDetails = async (opname: any) => {
 const submitReview = async (opname: any) => {
   submitting.value = true
   try {
-    await $api.post('/opname/review', { opname_id: opname.id })
+    await $api.post('/inventory/opname/review', { opname_id: opname.id })
     toast.add({ title: 'Submitted', description: 'Opname submitted for approval', color: 'green' })
     showDetailModal.value = false
     await fetchPending()
@@ -385,7 +385,7 @@ const confirmApprove = async () => {
   
   submitting.value = true
   try {
-    await $api.post('/opname/approve', { opname_id: opnameToAction.value.id, approved: true })
+    await $api.post('/inventory/opname/approve', { opname_id: opnameToAction.value.id, approved: true })
     toast.add({ title: 'Approved!', description: 'Opname approved and ready for posting', color: 'green' })
     showApproveModal.value = false
     showDetailModal.value = false
@@ -408,7 +408,7 @@ const confirmReject = async () => {
   
   submitting.value = true
   try {
-    await $api.post('/opname/approve', { 
+    await $api.post('/inventory/opname/approve', { 
       opname_id: opnameToAction.value.id, 
       approved: false, 
       rejection_reason: rejectReason.value 
@@ -434,7 +434,7 @@ const confirmPost = async () => {
   
   submitting.value = true
   try {
-    await $api.post('/opname/post', { opname_id: opnameToAction.value.id })
+    await $api.post('/inventory/opname/post', { opname_id: opnameToAction.value.id })
     toast.add({ title: 'Posted!', description: 'Stock adjustments have been applied', color: 'green' })
     showPostModal.value = false
     showDetailModal.value = false

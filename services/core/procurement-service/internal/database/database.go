@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/elviskudo/mini-erp/services/procurement-service/internal/database/seeders"
+	"github.com/elviskudo/mini-erp/services/procurement-service/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -34,6 +36,27 @@ func Connect() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
+
+	// Auto Migrate
+	log.Println("🔄 Procurement Service: Running AutoMigrate...")
+	if err := DB.AutoMigrate(
+		&models.Vendor{},
+		&models.PurchaseRequest{},
+		&models.PurchaseRequestItem{},
+		&models.PurchaseOrder{},
+		&models.PurchaseOrderItem{},
+		&models.VendorBill{},
+		&models.RFQ{},
+		&models.RFQItem{},
+		&models.RFQVendor{},
+		&models.Payment{},
+	); err != nil {
+		return fmt.Errorf("failed to migrate database: %w", err)
+	}
+
+	// Seed Data
+	log.Println("🌱 Procurement Service: Checking if seeding is needed...")
+	seeders.Seed(DB)
 
 	sqlDB, err := DB.DB()
 	if err != nil {

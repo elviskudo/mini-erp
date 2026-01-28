@@ -55,6 +55,7 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 		auth.PUT("/profile", proxyToAuth)
 		auth.GET("/user-tenants", proxyToAuth)   // Get user's available tenants
 		auth.POST("/switch-tenant", proxyToAuth) // Switch to different tenant
+		auth.GET("/users", proxyToAuth)          // List all users
 	}
 
 	// ========== FINANCE SERVICE (proxied to finance-service:8011) ==========
@@ -228,6 +229,20 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 		inventory.POST("/opnames", proxyToInventory)
 		inventory.GET("/opnames/:id", proxyToInventory)
 
+		// Opname Extended (New) - Route /inventory/opname/... to inventory service
+		// Proxying /api/v1/inventory/opname/* to /inventory/opname/*
+		opname := inventory.Group("/opname")
+		{
+			opname.GET("/schedule", proxyToInventory)
+			opname.POST("/schedule", proxyToInventory)
+			opname.GET("/counting", proxyToInventory)
+			opname.POST("/counting", proxyToInventory)
+			opname.GET("/matching", proxyToInventory)
+			opname.POST("/matching", proxyToInventory)
+			opname.GET("/adjustment", proxyToInventory)
+			opname.POST("/adjustment", proxyToInventory)
+		}
+
 		// Locations
 		inventory.GET("/locations", proxyToInventory)
 	}
@@ -326,6 +341,14 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 		mfg.PUT("/work-orders/:id", proxyToManufacturing)
 		mfg.DELETE("/work-orders/:id", proxyToManufacturing)
 		mfg.PUT("/work-orders/:id/status", proxyToManufacturing)
+
+		// MRP (Material Requirements Planning)
+		mfg.GET("/mrp/run", proxyToManufacturing)
+		mfg.GET("/mrp/mps", proxyToManufacturing)
+		mfg.GET("/mrp/forecast", proxyToManufacturing)
+		mfg.GET("/mrp/requirements", proxyToManufacturing)
+		mfg.GET("/mrp/exceptions", proxyToManufacturing)
+		mfg.GET("/mrp/analytics", proxyToManufacturing)
 	}
 
 	// ========== FLEET SERVICE (proxied to fleet-service:8015) ==========
@@ -470,6 +493,20 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 		crm.PUT("/forms/:id", proxyToCRM)
 		crm.DELETE("/forms/:id", proxyToCRM)
 		crm.GET("/forms/:id/submissions", proxyToCRM)
+
+		// Email Broadcasts
+		crm.GET("/email-broadcasts", proxyToCRM)
+		crm.POST("/email-broadcasts", proxyToCRM)
+		crm.GET("/email-broadcasts/:id", proxyToCRM)
+		crm.PUT("/email-broadcasts/:id", proxyToCRM)
+		crm.DELETE("/email-broadcasts/:id", proxyToCRM)
+
+		// Promos
+		crm.GET("/promos", proxyToCRM)
+		crm.POST("/promos", proxyToCRM)
+		crm.GET("/promos/:id", proxyToCRM)
+		crm.PUT("/promos/:id", proxyToCRM)
+		crm.DELETE("/promos/:id", proxyToCRM)
 	}
 
 	// ========== PROCUREMENT SERVICE (proxied to procurement-service:8018) ==========
@@ -492,11 +529,23 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 		proc.GET("/purchase-requests", proxyToProcurement)
 		proc.POST("/purchase-requests", proxyToProcurement)
 		proc.POST("/purchase-requests/:id/approve", proxyToProcurement)
+		proc.POST("/purchase-requests/:id/reject", proxyToProcurement)
 		proc.GET("/purchase-orders", proxyToProcurement)
 		proc.POST("/purchase-orders", proxyToProcurement)
+		proc.POST("/purchase-orders/from-pr", proxyToProcurement)
 		proc.POST("/purchase-orders/:id/approve", proxyToProcurement)
+		proc.POST("/purchase-orders/:id/send", proxyToProcurement)
+		proc.POST("/purchase-orders/:id/receive", proxyToProcurement)
+		proc.GET("/purchase-orders/:id/pdf", proxyToProcurement)
 		proc.GET("/bills", proxyToProcurement)
 		proc.POST("/bills", proxyToProcurement)
+		proc.GET("/rfqs", proxyToProcurement)
+		proc.POST("/rfqs", proxyToProcurement)
+		proc.GET("/rfqs/:id", proxyToProcurement)
+		proc.PUT("/rfqs/:id/send", proxyToProcurement)
+		proc.GET("/payments", proxyToProcurement)
+		proc.POST("/bills/:id/payments", proxyToProcurement)
+		proc.GET("/analytics/summary", proxyToProcurement)
 	}
 
 	// ========== LOGISTICS SERVICE (proxied to logistics-service:8019) ==========
@@ -528,9 +577,6 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 	rg.Any("/qc/*any", proxyToLegacy("qc"))
 	rg.Any("/iot/*any", proxyToLegacy("iot"))
 
-	// Stock Operations
-	rg.Any("/opname/*any", proxyToLegacy("opname"))
-
 	// ========== SALES SERVICE (proxied to sales-service:8023) ==========
 	proxyToSales := func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -561,6 +607,39 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 		sales.POST("/invoices", proxyToSales)
 		sales.GET("/invoices/:id", proxyToSales)
 		sales.POST("/invoices/:id/pay", proxyToSales)
+
+		// Credit Notes
+		sales.GET("/credit-notes", proxyToSales)
+		sales.POST("/credit-notes", proxyToSales)
+		sales.GET("/credit-notes/:id", proxyToSales)
+		sales.PUT("/credit-notes/:id", proxyToSales)
+
+		// Payments
+		sales.GET("/payments", proxyToSales)
+		sales.POST("/payments", proxyToSales)
+
+		// Price Lists
+		sales.GET("/price-lists", proxyToSales)
+		sales.POST("/price-lists", proxyToSales)
+		sales.GET("/price-lists/:id", proxyToSales)
+		sales.PUT("/price-lists/:id", proxyToSales)
+
+		// Discount Rules
+		sales.GET("/discount-rules", proxyToSales)
+		sales.POST("/discount-rules", proxyToSales)
+		sales.GET("/discount-rules/:id", proxyToSales)
+		sales.PUT("/discount-rules/:id", proxyToSales)
+
+		// Contracts
+		sales.GET("/contracts", proxyToSales)
+		sales.POST("/contracts", proxyToSales)
+		sales.GET("/contracts/:id", proxyToSales)
+		sales.PUT("/contracts/:id", proxyToSales)
+
+		// Commissions
+		sales.GET("/commission", proxyToSales)
+		sales.POST("/commission", proxyToSales)
+		sales.PUT("/commission/:id/status", proxyToSales)
 	}
 
 	// Finance legacy (AP/AR/Sales)
@@ -606,7 +685,16 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 	pos.Use(middleware.RoleMiddleware("POS_OFFICER", "MANAGER"))
 	{
 		pos.GET("/stats", proxyToPOS)
-		// ... existing routes
+		pos.GET("/transactions", proxyToPOS)
+		pos.POST("/transactions", proxyToPOS)
+		pos.GET("/transactions/:id", proxyToPOS)
+		pos.POST("/transactions/:id/void", proxyToPOS)
+
+		// Promos
+		pos.GET("/promos", proxyToPOS)
+		pos.GET("/promos/:code", proxyToPOS)
+		pos.POST("/promos/apply", proxyToPOS)
+		pos.GET("/reports/daily", proxyToPOS)
 	}
 
 	// ========== COMPLIANCE SERVICE (proxied to compliance-service:8022) ==========

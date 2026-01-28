@@ -119,6 +119,21 @@ func main() {
 		// Separate routes for updating/deleting by activity ID
 		crm.PUT("/meetings/:id", h.UpdateCustomerMeeting)
 		crm.DELETE("/documents/:id", h.DeleteCustomerDocument)
+
+		// Promos
+		crm.GET("/promos", h.ListPromos)
+		crm.POST("/promos", h.CreatePromo)
+		crm.GET("/promos/:id", h.GetPromo)
+		crm.PUT("/promos/:id", h.UpdatePromo)
+		crm.DELETE("/promos/:id", h.DeletePromo)
+		crm.POST("/promos/:id/publish", h.PublishPromo)
+
+		// Email Broadcasts
+		crm.GET("/email-broadcasts", h.ListEmailBroadcasts)
+		crm.POST("/email-broadcasts", h.CreateEmailBroadcast)
+		crm.GET("/email-broadcasts/:id", h.GetEmailBroadcast)
+		crm.PUT("/email-broadcasts/:id", h.UpdateEmailBroadcast)
+		crm.DELETE("/email-broadcasts/:id", h.DeleteEmailBroadcast)
 	}
 
 	// Public endpoint for form submission (no auth required)

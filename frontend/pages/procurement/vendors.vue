@@ -240,19 +240,6 @@ const getRatingColor = (rating: string) => {
     }
 }
 
-const fetchVendors = async () => {
-    loading.value = true
-    try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
-        const res: any = await $fetch('/api/procurement/vendors', { headers })
-        vendors.value = res
-    } catch (e) {
-        console.error(e)
-    } finally {
-        loading.value = false
-    }
-}
-
 const openCreate = () => {
     resetForm()
     editMode.value = false
@@ -360,23 +347,30 @@ const reverseGeocode = async (lat: number, lng: number) => {
   }
 }
 
+const { $api } = useNuxtApp()
+
+const fetchVendors = async () => {
+    loading.value = true
+    try {
+        const res = await $api.get('/procurement/vendors')
+        vendors.value = res.data?.data || []
+    } catch (e) {
+        console.error(e)
+    } finally {
+        loading.value = false
+    }
+}
+
+// ... (skip lines)
+
 const saveVendor = async () => {
     submitting.value = true
     try {
-        const headers = { Authorization: `Bearer ${authStore.token}` }
         if (editMode.value) {
-            await $fetch(`/api/procurement/vendors/${form.id}`, {
-                method: 'PUT',
-                headers,
-                body: form
-            })
+            await $api.put(`/procurement/vendors/${form.id}`, form)
             toast.add({ title: 'Updated', description: 'Vendor updated.', color: 'green' })
         } else {
-            await $fetch('/api/procurement/vendors', {
-                method: 'POST',
-                headers,
-                body: form
-            })
+            await $api.post('/procurement/vendors', form)
             toast.add({ title: 'Created', description: 'Vendor created.', color: 'green' })
         }
         isOpen.value = false

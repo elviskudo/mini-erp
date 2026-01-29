@@ -329,7 +329,10 @@ const fetchData = async () => {
       $api.get('/manufacturing/products'),
       $api.get('/manufacturing/orders')
     ])
-    checks.value = extractArray(checksRes)
+    checks.value = extractArray(checksRes).map((c: any) => ({
+      ...c,
+      product_name: c.product?.name || 'Unknown'
+    }))
     products.value = extractArray(productsRes)
     productionOrders.value = extractArray(ordersRes)
   } catch (e) {

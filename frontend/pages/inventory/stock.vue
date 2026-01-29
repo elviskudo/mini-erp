@@ -275,8 +275,9 @@ const fetchWarehouses = async () => {
 
 const fetchLocations = async () => {
   try {
-    const headers = { Authorization: `Bearer ${authStore.token}` }
-    locations.value = await $fetch('/api/inventory/locations-for-move', { headers })
+    const { $api } = useNuxtApp()
+    const res = await $api.get('/inventory/locations-for-move')
+    locations.value = res.data
   } catch (e) {
     console.error('Failed to fetch locations', e)
   }
@@ -286,7 +287,14 @@ const fetchStock = async () => {
   loading.value = true
   try {
     const headers = { Authorization: `Bearer ${authStore.token}` }
-    stockItems.value = await $fetch('/api/inventory/stock', { headers })
+    const res: any = await $fetch('/api/inventory/stock', { headers })
+    stockItems.value = (res.data || []).map((item: any) => ({
+      ...item,
+      // Flatten nested product name if needed for direct access, though template handles safe access
+      product_name: item.product?.name || 'Unknown',
+      warehouse_name: item.warehouse?.name || '-',
+      location_name: item.location?.name || '-'
+    }))
   } catch (e) {
     console.error('Failed to fetch stock', e)
     toast.add({ title: 'Error', description: 'Failed to load stock data', color: 'red' })

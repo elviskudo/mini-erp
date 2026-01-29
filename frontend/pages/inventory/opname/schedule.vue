@@ -342,13 +342,13 @@ const fetchData = async () => {
   loading.value = true
   try {
     const [schedRes, whRes, userRes] = await Promise.all([
-      $api.get('/opname/schedules'),
+      $api.get('/opname/schedule', { baseURL: '/api' }),
       $api.get('/inventory/warehouses'),
-      $api.get('/users')
+      $api.get('/users', { baseURL: '/api' })
     ])
-    schedules.value = schedRes.data || []
-    warehouses.value = whRes.data || []
-    users.value = userRes.data || []
+    schedules.value = schedRes.data?.data || []
+    warehouses.value = whRes.data?.data || []
+    users.value = userRes.data?.data || []
   } catch (e) {
     console.error(e)
   } finally {

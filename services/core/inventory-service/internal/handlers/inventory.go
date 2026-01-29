@@ -1,13 +1,16 @@
 package handlers
 
 import (
-	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/elviskudo/mini-erp/services/inventory-service/internal/database"
 	"github.com/elviskudo/mini-erp/services/inventory-service/internal/models"
 	"github.com/elviskudo/mini-erp/services/inventory-service/internal/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type InventoryHandler struct{}
@@ -21,7 +24,7 @@ func NewInventoryHandler() *InventoryHandler {
 func (h *InventoryHandler) GetStats(c *gin.Context) {
 	db := database.GetDB()
 	if db == nil {
-		c.JSON(http.StatusOK, getMockStats())
+		response.Success(c, getMockStats(), "Inventory stats retrieved (mock)")
 		return
 	}
 
@@ -33,14 +36,14 @@ func (h *InventoryHandler) GetStats(c *gin.Context) {
 	var totalStock int64
 	db.Model(&models.InventoryBatch{}).Select("COALESCE(SUM(quantity), 0)").Scan(&totalStock)
 
-	c.JSON(http.StatusOK, gin.H{
+	response.Success(c, gin.H{
 		"total_warehouses":  warehouseCount,
 		"total_products":    productCount,
 		"total_stock":       totalStock,
 		"recent_movements":  movementCount,
 		"low_stock_items":   5,
 		"pending_transfers": 3,
-	})
+	}, "Inventory stats retrieved successfully")
 }
 
 func getMockStats() gin.H {
@@ -120,17 +123,17 @@ func (h *InventoryHandler) GetProduct(c *gin.Context) {
 	productID := c.Param("id")
 
 	if db == nil {
-		c.JSON(http.StatusOK, gin.H{"id": productID, "code": "P001", "name": "Sample Product"})
+		response.Success(c, gin.H{"id": productID, "code": "P001", "name": "Sample Product"}, "Product retrieved (mock)")
 		return
 	}
 
 	var product models.Product
 	if err := db.First(&product, "id = ?", productID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+		response.NotFound(c, "Product not found")
 		return
 	}
 
-	c.JSON(http.StatusOK, product)
+	response.Success(c, product, "Product retrieved successfully")
 }
 
 // CreateProduct creates a new product
@@ -147,17 +150,17 @@ func (h *InventoryHandler) CreateProduct(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	response.SuccessCreate(c, gin.H{
 		"id":      "new-product-id",
 		"code":    req.Code,
 		"name":    req.Name,
 		"type":    req.Type,
 		"message": "Product created successfully",
-	})
+	}, "Product created successfully")
 }
 
 // UpdateProduct updates an existing product
@@ -167,26 +170,14 @@ func (h *InventoryHandler) UpdateProduct(c *gin.Context) {
 	productID := c.Param("id")
 
 	if db == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"code":    "INTERNAL_ERROR",
-			"message": "Database not connected",
-		})
+		response.InternalError(c, "Database not connected")
 		return
 	}
 
 	// Find existing product
 	var product models.Product
 	if err := db.First(&product, "id = ?", productID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success":   false,
-			"code":      "NOT_FOUND",
-			"message":   "Product not found",
-			"data":      nil,
-			"meta":      nil,
-			"errors":    nil,
-			"timestamp": "",
-		})
+		response.NotFound(c, "Product not found")
 		return
 	}
 
@@ -203,11 +194,7 @@ func (h *InventoryHandler) UpdateProduct(c *gin.Context) {
 		ImageURL       *string  `json:"image_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"code":    "BAD_REQUEST",
-			"message": err.Error(),
-		})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
@@ -246,23 +233,11 @@ func (h *InventoryHandler) UpdateProduct(c *gin.Context) {
 
 	// Save to database
 	if err := db.Save(&product).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"code":    "INTERNAL_ERROR",
-			"message": "Failed to update product",
-		})
+		response.InternalError(c, "Failed to update product")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success":   true,
-		"code":      "SUCCESS",
-		"message":   "Product updated successfully",
-		"data":      product,
-		"meta":      nil,
-		"errors":    nil,
-		"timestamp": "",
-	})
+	response.Success(c, product, "Product updated successfully")
 }
 
 // DeleteProduct deletes a product
@@ -272,41 +247,24 @@ func (h *InventoryHandler) DeleteProduct(c *gin.Context) {
 	productID := c.Param("id")
 
 	if db == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"code":    "INTERNAL_ERROR",
-			"message": "Database not connected",
-		})
+		response.InternalError(c, "Database not connected")
 		return
 	}
 
 	// Check if product exists
 	var product models.Product
 	if err := db.First(&product, "id = ?", productID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"code":    "NOT_FOUND",
-			"message": "Product not found",
-		})
+		response.NotFound(c, "Product not found")
 		return
 	}
 
 	// Delete from database
 	if err := db.Delete(&product).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"code":    "INTERNAL_ERROR",
-			"message": "Failed to delete product",
-		})
+		response.InternalError(c, "Failed to delete product")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"code":    "SUCCESS",
-		"message": "Product deleted successfully",
-		"data":    gin.H{"id": productID},
-	})
+	response.Success(c, gin.H{"id": productID}, "Product deleted successfully")
 }
 
 // ========== WAREHOUSES ==========
@@ -315,23 +273,29 @@ func (h *InventoryHandler) DeleteProduct(c *gin.Context) {
 // GET /inventory/warehouses
 func (h *InventoryHandler) ListWarehouses(c *gin.Context) {
 	db := database.GetDB()
+	// Parse pagination
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	offset := (page - 1) * limit
+
 	if db == nil {
-		c.JSON(http.StatusOK, getMockWarehouses())
+		response.SuccessList(c, getMockWarehouses(), page, limit, 2, "Warehouses retrieved (mock)")
 		return
 	}
 
 	var warehouses []models.Warehouse
-	if err := db.Order("code ASC").Find(&warehouses).Error; err != nil {
-		c.JSON(http.StatusOK, getMockWarehouses())
+	var total int64
+	db.Model(&models.Warehouse{}).Count(&total)
+
+	if err := db.Order("code ASC").Offset(offset).Limit(limit).Find(&warehouses).Error; err != nil {
+		// If DB error but we want to fail gracefully or return mock?
+		// Actually Standard should return error or empty list.
+		// Let's return error as standard.
+		response.InternalError(c, "Failed to fetch warehouses")
 		return
 	}
 
-	if len(warehouses) == 0 {
-		c.JSON(http.StatusOK, getMockWarehouses())
-		return
-	}
-
-	c.JSON(http.StatusOK, warehouses)
+	response.SuccessList(c, warehouses, page, limit, total, "Warehouses retrieved successfully")
 }
 
 func getMockWarehouses() []gin.H {
@@ -348,17 +312,17 @@ func (h *InventoryHandler) GetWarehouse(c *gin.Context) {
 	warehouseID := c.Param("id")
 
 	if db == nil {
-		c.JSON(http.StatusOK, gin.H{"id": warehouseID, "code": "WH001", "name": "Main Warehouse"})
+		response.Success(c, gin.H{"id": warehouseID, "code": "WH001", "name": "Main Warehouse"}, "Warehouse retrieved (mock)")
 		return
 	}
 
 	var warehouse models.Warehouse
 	if err := db.First(&warehouse, "id = ?", warehouseID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Warehouse not found"})
+		response.NotFound(c, "Warehouse not found")
 		return
 	}
 
-	c.JSON(http.StatusOK, warehouse)
+	response.Success(c, warehouse, "Warehouse retrieved successfully")
 }
 
 // CreateWarehouse creates a new warehouse
@@ -372,23 +336,23 @@ func (h *InventoryHandler) CreateWarehouse(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	response.SuccessCreate(c, gin.H{
 		"id":      "new-warehouse-id",
 		"code":    req.Code,
 		"name":    req.Name,
 		"message": "Warehouse created successfully",
-	})
+	}, "Warehouse created successfully")
 }
 
 // UpdateWarehouse updates a warehouse
 // PUT /inventory/warehouses/:id
 func (h *InventoryHandler) UpdateWarehouse(c *gin.Context) {
 	warehouseID := c.Param("id")
-	c.JSON(http.StatusOK, gin.H{"id": warehouseID, "message": "Warehouse updated"})
+	response.Success(c, gin.H{"id": warehouseID}, "Warehouse updated")
 }
 
 // ========== STOCK ==========
@@ -398,7 +362,7 @@ func (h *InventoryHandler) UpdateWarehouse(c *gin.Context) {
 func (h *InventoryHandler) ListStock(c *gin.Context) {
 	db := database.GetDB()
 	if db == nil {
-		c.JSON(http.StatusOK, getMockStock())
+		response.Success(c, getMockStock(), "Stock retrieved (mock)")
 		return
 	}
 
@@ -413,16 +377,16 @@ func (h *InventoryHandler) ListStock(c *gin.Context) {
 	}
 
 	if err := query.Find(&batches).Error; err != nil {
-		c.JSON(http.StatusOK, getMockStock())
+		response.Success(c, getMockStock(), "Stock retrieved (mock)")
 		return
 	}
 
 	if len(batches) == 0 {
-		c.JSON(http.StatusOK, getMockStock())
+		response.Success(c, getMockStock(), "Stock retrieved (mock)")
 		return
 	}
 
-	c.JSON(http.StatusOK, batches)
+	response.Success(c, batches, "Stock retrieved successfully")
 }
 
 func getMockStock() []gin.H {
@@ -437,13 +401,30 @@ func getMockStock() []gin.H {
 // GET /inventory/movements
 func (h *InventoryHandler) ListMovements(c *gin.Context) {
 	db := database.GetDB()
+	// Parse pagination
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset := (page - 1) * limit
+
 	if db == nil {
-		c.JSON(http.StatusOK, getMockMovements())
+		// Return mock with stats structure
+		mockData := gin.H{
+			"movements": getMockMovements(),
+			"total":     1,
+			"stats": gin.H{
+				"inbound":    10,
+				"outbound":   5,
+				"transfer":   2,
+				"adjustment": 0,
+			},
+		}
+		response.Success(c, mockData, "Stock movements retrieved (mock)")
 		return
 	}
 
 	var movements []models.StockMovement
-	query := db.Order("timestamp DESC").Limit(50)
+	var total int64
+	query := db.Model(&models.StockMovement{})
 
 	if movementType := c.Query("movement_type"); movementType != "" {
 		query = query.Where("movement_type = ?", movementType)
@@ -452,17 +433,32 @@ func (h *InventoryHandler) ListMovements(c *gin.Context) {
 		query = query.Where("warehouse_id = ?", warehouseID)
 	}
 
-	if err := query.Find(&movements).Error; err != nil {
-		c.JSON(http.StatusOK, getMockMovements())
+	query.Count(&total)
+
+	if err := query.Preload("Product").Preload("Warehouse").Order("timestamp DESC").Offset(offset).Limit(limit).Find(&movements).Error; err != nil {
+		response.InternalError(c, "Failed to fetch movements")
 		return
 	}
 
-	if len(movements) == 0 {
-		c.JSON(http.StatusOK, getMockMovements())
-		return
+	// Calculate Stats (simplified, ideally these should be separate cached queries)
+	var inbound, outbound, transfer, adjustment int64
+	db.Model(&models.StockMovement{}).Where("movement_type = ?", "IN").Count(&inbound)
+	db.Model(&models.StockMovement{}).Where("movement_type = ?", "OUT").Count(&outbound)
+	db.Model(&models.StockMovement{}).Where("movement_type = ?", "TRANSFER").Count(&transfer)
+	db.Model(&models.StockMovement{}).Where("movement_type = ?", "ADJUSTMENT").Count(&adjustment)
+
+	result := gin.H{
+		"movements": movements,
+		"total":     total,
+		"stats": gin.H{
+			"inbound":    inbound,
+			"outbound":   outbound,
+			"transfer":   transfer,
+			"adjustment": adjustment,
+		},
 	}
 
-	c.JSON(http.StatusOK, movements)
+	response.Success(c, result, "Stock movements retrieved successfully")
 }
 
 func getMockMovements() []gin.H {
@@ -478,7 +474,7 @@ func getMockMovements() []gin.H {
 func (h *InventoryHandler) ListOpnames(c *gin.Context) {
 	db := database.GetDB()
 	if db == nil {
-		c.JSON(http.StatusOK, getMockOpnames())
+		response.Success(c, getMockOpnames(), "Stock opnames retrieved (mock)")
 		return
 	}
 
@@ -490,16 +486,16 @@ func (h *InventoryHandler) ListOpnames(c *gin.Context) {
 	}
 
 	if err := query.Find(&opnames).Error; err != nil {
-		c.JSON(http.StatusOK, getMockOpnames())
+		response.Success(c, getMockOpnames(), "Stock opnames retrieved (mock)")
 		return
 	}
 
 	if len(opnames) == 0 {
-		c.JSON(http.StatusOK, getMockOpnames())
+		response.Success(c, getMockOpnames(), "Stock opnames retrieved (mock)")
 		return
 	}
 
-	c.JSON(http.StatusOK, opnames)
+	response.Success(c, opnames, "Stock opnames retrieved successfully")
 }
 
 func getMockOpnames() []gin.H {
@@ -519,25 +515,25 @@ func (h *InventoryHandler) CreateOpname(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	response.SuccessCreate(c, gin.H{
 		"id":      "new-opname-id",
 		"code":    req.Code,
 		"status":  "DRAFT",
 		"message": "Stock opname created successfully",
-	})
+	}, "Stock opname created successfully")
 }
 
 // GetOpname gets opname by ID
 // GET /inventory/opnames/:id
 func (h *InventoryHandler) GetOpname(c *gin.Context) {
 	opnameID := c.Param("id")
-	c.JSON(http.StatusOK, gin.H{
+	response.Success(c, gin.H{
 		"id": opnameID, "code": "OP-2024-001", "name": "Stock Take", "status": "IN_PROGRESS",
-	})
+	}, "Stock opname retrieved (mock)")
 }
 
 // ========== STOCK OPNAME EXTENDED ==========
@@ -545,16 +541,210 @@ func (h *InventoryHandler) GetOpname(c *gin.Context) {
 // ListOpnameSchedules lists opname schedules
 // GET /inventory/opname/schedule
 func (h *InventoryHandler) ListOpnameSchedules(c *gin.Context) {
-	data := []gin.H{
-		{"id": "sch-1", "date": "2024-02-01", "warehouse": "Main Warehouse", "status": "Scheduled"},
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
 	}
-	response.SuccessList(c, data, 1, 10, 1, "Opname schedules retrieved")
+
+	var schedules []models.OpnameSchedule
+	if err := db.Preload("Warehouse").Preload("Assignments").Order("scheduled_date ASC").Find(&schedules).Error; err != nil {
+		response.InternalError(c, "Failed to fetch schedules: "+err.Error())
+		return
+	}
+
+	response.SuccessList(c, schedules, 1, len(schedules), int64(len(schedules)), "Opname schedules retrieved")
 }
 
 // CreateOpnameSchedule creates a new schedule
 // POST /inventory/opname/schedule
 func (h *InventoryHandler) CreateOpnameSchedule(c *gin.Context) {
-	response.SuccessCreate(c, gin.H{"id": "sch-new"}, "Schedule created successfully")
+	db := database.GetDB()
+	tenantID := c.GetHeader("X-Tenant-ID")
+	if tenantID == "" {
+		tenantID = "00000000-0000-0000-0000-000000000000"
+	}
+
+	var req struct {
+		Name          string `json:"name" binding:"required"`
+		WarehouseID   string `json:"warehouse_id" binding:"required"`
+		Frequency     string `json:"frequency" binding:"required"`
+		ScheduledDate string `json:"scheduled_date" binding:"required"`
+		Description   string `json:"description"`
+		Assignments   []struct {
+			UserID string `json:"user_id"`
+			Role   string `json:"role"`
+		} `json:"assignments"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	scheduledTime, err := time.Parse(time.RFC3339, req.ScheduledDate)
+	if err != nil {
+		// Try alternative formats if frontend sends standard datetime-local format
+		scheduledTime, err = time.Parse("2006-01-02T15:04", req.ScheduledDate)
+		if err != nil {
+			response.BadRequest(c, "Invalid date format. Expected RFC3339 or YYYY-MM-DDTHH:MM")
+			return
+		}
+	}
+
+	schedule := models.OpnameSchedule{
+		ID:            uuid.New().String(),
+		TenantID:      tenantID,
+		Name:          req.Name,
+		WarehouseID:   req.WarehouseID,
+		Frequency:     strings.ToUpper(req.Frequency),
+		ScheduledDate: scheduledTime,
+		IsActive:      true,
+		Description:   &req.Description,
+	}
+
+	// Create in transaction to include assignments
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&schedule).Error; err != nil {
+			return err
+		}
+
+		for _, a := range req.Assignments {
+			assignment := models.OpnameAssignment{
+				ID:         uuid.New().String(),
+				TenantID:   tenantID,
+				ScheduleID: schedule.ID,
+				UserID:     a.UserID,
+				Role:       a.Role,
+			}
+			if err := tx.Create(&assignment).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		response.InternalError(c, "Failed to create schedule: "+err.Error())
+		return
+	}
+
+	// Preload for response
+	db.Preload("Warehouse").Preload("Assignments").First(&schedule, "id = ?", schedule.ID)
+	response.SuccessCreate(c, schedule, "Schedule created successfully")
+}
+
+// AssignTeam adds a team member to an existing schedule (matches frontend payload)
+// POST /inventory/opname/assign-team
+func (h *InventoryHandler) AssignTeam(c *gin.Context) {
+	db := database.GetDB()
+	tenantID := c.GetHeader("X-Tenant-ID")
+
+	var req struct {
+		ScheduleID string `json:"schedule_id" binding:"required"`
+		UserID     string `json:"user_id" binding:"required"`
+		Role       string `json:"role" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	assignment := models.OpnameAssignment{
+		ID:         uuid.New().String(),
+		TenantID:   tenantID,
+		ScheduleID: req.ScheduleID,
+		UserID:     req.UserID,
+		Role:       req.Role,
+		CreatedAt:  time.Now(),
+	}
+
+	if err := db.Create(&assignment).Error; err != nil {
+		response.InternalError(c, "Failed to assign team member: "+err.Error())
+		return
+	}
+
+	response.Success(c, assignment, "Team member assigned successfully")
+}
+
+// PrintOpnameList generates a printable list of items to count
+// GET /inventory/opname/print-list/:warehouse_id
+func (h *InventoryHandler) PrintOpnameList(c *gin.Context) {
+	db := database.GetDB()
+	warehouseID := c.Param("warehouse_id")
+
+	var warehouse models.Warehouse
+	if err := db.First(&warehouse, "id = ?", warehouseID).Error; err != nil {
+		response.NotFound(c, "Warehouse not found")
+		return
+	}
+
+	// In a real app, you'd fetch current stock levels.
+	// For now, let's fetch products and return them with 0/placeholder qty.
+	var products []models.Product
+	if err := db.Find(&products).Error; err != nil {
+		response.InternalError(c, "Failed to fetch products")
+		return
+	}
+
+	type PrintItem struct {
+		ProductCode string  `json:"product_code"`
+		ProductName string  `json:"product_name"`
+		Location    string  `json:"location"`
+		SystemQty   float64 `json:"system_qty"`
+		UoM         string  `json:"uom"`
+	}
+
+	items := make([]PrintItem, 0)
+	for _, p := range products {
+		items = append(items, PrintItem{
+			ProductCode: p.SKU,
+			ProductName: p.Name,
+			Location:    "General", // Update this when location tracking is fully implemented
+			SystemQty:   100.0,     // Placeholder
+			UoM:         p.UoM,
+		})
+	}
+
+	res := gin.H{
+		"warehouse_name": warehouse.Name,
+		"date":           time.Now().Format("2006-01-02"),
+		"items":          items,
+	}
+
+	response.Success(c, res, "Print list generated")
+}
+
+// AddTeamMember adds a team member to an existing schedule
+// POST /inventory/opname/schedule/:id/assign
+func (h *InventoryHandler) AddTeamMember(c *gin.Context) {
+	db := database.GetDB()
+	scheduleID := c.Param("id")
+
+	var req struct {
+		UserID string `json:"user_id" binding:"required"`
+		Role   string `json:"role" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	assignment := models.OpnameAssignment{
+		ID:         uuid.New().String(),
+		ScheduleID: scheduleID,
+		UserID:     req.UserID,
+		Role:       req.Role,
+	}
+
+	if err := db.Create(&assignment).Error; err != nil {
+		response.InternalError(c, "Failed to assign team member")
+		return
+	}
+
+	response.Success(c, assignment, "Team member assigned successfully")
 }
 
 // ListOpnameCounting lists items for counting
@@ -607,20 +797,198 @@ func (h *InventoryHandler) SubmitOpnameAdjustment(c *gin.Context) {
 // GetLocationsHierarchy gets warehouse/floor/room hierarchy
 // GET /inventory/locations
 func (h *InventoryHandler) GetLocationsHierarchy(c *gin.Context) {
-	c.JSON(http.StatusOK, []gin.H{
-		{
-			"id": "wh-1", "code": "WH001", "name": "Main Warehouse",
-			"floors": []gin.H{
-				{
-					"id": "floor-1", "name": "Ground Floor",
-					"rooms": []gin.H{
-						{"id": "room-1", "name": "Storage A", "capacity": 1000},
-						{"id": "room-2", "name": "Storage B", "capacity": 500},
-					},
-				},
-			},
-		},
-	})
+	db := database.GetDB()
+	if db == nil {
+		response.Success(c, []gin.H{}, "Locations hierarchy retrieved")
+		return
+	}
+
+	var warehouses []models.Warehouse
+	if err := db.Find(&warehouses).Error; err != nil {
+		response.InternalError(c, "Failed to fetch warehouses")
+		return
+	}
+
+	var zones []models.StorageZone
+	if err := db.Find(&zones).Error; err != nil {
+		response.InternalError(c, "Failed to fetch storage zones")
+		return
+	}
+
+	// Group zones by warehouse
+	zonesByWarehouse := make(map[string][]models.StorageZone)
+	for _, z := range zones {
+		zonesByWarehouse[z.WarehouseID] = append(zonesByWarehouse[z.WarehouseID], z)
+	}
+
+	var result []gin.H
+	for _, w := range warehouses {
+		whZones := zonesByWarehouse[w.ID]
+		var rooms []gin.H
+		for _, z := range whZones {
+			rooms = append(rooms, gin.H{
+				"id":       z.ID,
+				"name":     z.ZoneName,
+				"capacity": z.CapacityUnits,
+				"type":     z.ZoneType,
+			})
+		}
+
+		// Create a virtual floor if there are zones, or just empty
+		floors := []gin.H{}
+		if len(rooms) > 0 {
+			floors = append(floors, gin.H{
+				"id":    "floor-main-" + w.ID,
+				"name":  "Main Level",
+				"rooms": rooms,
+			})
+		}
+
+		result = append(result, gin.H{
+			"id":     w.ID,
+			"code":   w.Code,
+			"name":   w.Name,
+			"floors": floors,
+		})
+	}
+
+	response.Success(c, result, "Locations hierarchy retrieved successfully")
+}
+
+// GetLocationsForMove returns a list of locations suitable for moving stock
+// GET /inventory/locations-for-move
+func (h *InventoryHandler) GetLocationsForMove(c *gin.Context) {
+	db := database.GetDB()
+	if db == nil {
+		response.Success(c, []gin.H{}, "Locations retrieved")
+		return
+	}
+
+	var zones []models.StorageZone
+	if err := db.Find(&zones).Error; err != nil {
+		response.InternalError(c, "Failed to fetch storage zones")
+		return
+	}
+
+	var result []gin.H
+	for _, z := range zones {
+		result = append(result, gin.H{
+			"id":   z.ID,
+			"name": z.ZoneName,
+		})
+	}
+
+	response.Success(c, result, "Locations retrieved successfully")
+}
+
+// ListStorageZones lists all storage zones
+// GET /inventory/storage-zones
+func (h *InventoryHandler) ListStorageZones(c *gin.Context) {
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
+	var zones []models.StorageZone
+	if err := db.Preload("Warehouse").Find(&zones).Error; err != nil {
+		response.InternalError(c, "Failed to fetch storage zones: "+err.Error())
+		return
+	}
+
+	response.SuccessList(c, zones, 1, 10, int64(len(zones)), "Storage zones retrieved successfully")
+}
+
+// CreateStorageZone creates a new storage zone
+// POST /inventory/storage-zones
+func (h *InventoryHandler) CreateStorageZone(c *gin.Context) {
+	db := database.GetDB()
+	tenantID := c.GetHeader("X-Tenant-ID")
+
+	var req models.StorageZone
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Manual UUID generation
+	req.ID = uuid.New().String()
+	req.TenantID = tenantID
+
+	if err := db.Create(&req).Error; err != nil {
+		response.InternalError(c, "Failed to create storage zone: "+err.Error())
+		return
+	}
+
+	response.SuccessCreate(c, req, "Storage zone created successfully")
+}
+
+// GetStorageZone gets storage zone by ID
+// GET /inventory/storage-zones/:id
+func (h *InventoryHandler) GetStorageZone(c *gin.Context) {
+	id := c.Param("id")
+	db := database.GetDB()
+
+	var zone models.StorageZone
+	if err := db.Preload("Warehouse").First(&zone, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "Storage zone not found")
+		return
+	}
+
+	response.Success(c, zone, "Storage zone retrieved")
+}
+
+// UpdateStorageZone updates a storage zone
+// PUT /inventory/storage-zones/:id
+func (h *InventoryHandler) UpdateStorageZone(c *gin.Context) {
+	id := c.Param("id")
+	db := database.GetDB()
+
+	var zone models.StorageZone
+	if err := db.First(&zone, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "Storage zone not found")
+		return
+	}
+
+	var req models.StorageZone
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Update specific fields
+	zone.ZoneName = req.ZoneName
+	zone.ZoneType = req.ZoneType
+	zone.WarehouseID = req.WarehouseID
+	zone.MinTemp = req.MinTemp
+	zone.MaxTemp = req.MaxTemp
+	zone.CapacityUnits = req.CapacityUnits
+	zone.ElectricityTariff = req.ElectricityTariff
+	zone.SensorID = req.SensorID
+	zone.ElectricityMeterID = req.ElectricityMeterID
+	zone.DailyKwhUsage = req.DailyKwhUsage
+	zone.MonthlyEnergyCost = req.MonthlyEnergyCost
+
+	if err := db.Save(&zone).Error; err != nil {
+		response.InternalError(c, "Failed to update storage zone: "+err.Error())
+		return
+	}
+
+	response.Success(c, zone, "Storage zone updated successfully")
+}
+
+// DeleteStorageZone deletes a storage zone
+// DELETE /inventory/storage-zones/:id
+func (h *InventoryHandler) DeleteStorageZone(c *gin.Context) {
+	id := c.Param("id")
+	db := database.GetDB()
+
+	if err := db.Delete(&models.StorageZone{}, "id = ?", id).Error; err != nil {
+		response.InternalError(c, "Failed to delete storage zone")
+		return
+	}
+
+	response.Success(c, gin.H{"id": id}, "Storage zone deleted successfully")
 }
 
 // ========== CATEGORIES ==========

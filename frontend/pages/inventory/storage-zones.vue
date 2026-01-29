@@ -253,25 +253,38 @@ const formatNumber = (num: number) => {
   return new Intl.NumberFormat('id-ID').format(num)
 }
 
+// Helper to safely extract array from API response
+const extractArray = (res: any): any[] => {
+  if (Array.isArray(res)) return res
+  if (res?.data && Array.isArray(res.data)) return res.data
+  if (res?.data?.data && Array.isArray(res.data.data)) return res.data.data
+  return []
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
     const headers = { Authorization: `Bearer ${authStore.token}` }
     
+    // Use $api if available or $fetch with proper handling
+    // We already use useNuxtApp().$api in other components, standardizing here would be better but keeping minimal changes
     const [zonesRes, warehousesRes] = await Promise.all([
       $fetch('/api/inventory/storage-zones', { headers }),
       $fetch('/api/inventory/warehouses', { headers })
     ])
     
-    zones.value = (zonesRes as any[]).map(z => ({
-      ...z,
-      warehouse_name: warehouses.value.find((w: any) => w.id === z.warehouse_id)?.name || 'N/A'
-    }))
-    warehouses.value = warehousesRes as any[]
+    // Unwrap data using helper
+    const zonesData = extractArray(zonesRes)
+    const warehousesData = extractArray(warehousesRes)
+
+    warehouses.value = warehousesData
     
-    // Re-map warehouse names after loading
-    zones.value = zones.value.map(z => ({
+    zones.value = zonesData.map((z: any) => ({
       ...z,
+      zone_name: z.zone_name || z.name || 'Unknown Zone',
+      zone_type: z.zone_type || z.type || 'Ambient',
+      min_temp: z.min_temp ?? 25,
+      max_temp: z.max_temp ?? 30,
       warehouse_name: warehouses.value.find((w: any) => w.id === z.warehouse_id)?.name || 'N/A'
     }))
   } catch (e) {

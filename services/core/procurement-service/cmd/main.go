@@ -36,7 +36,11 @@ func main() {
 		if database.GetDB() == nil {
 			dbStatus = "disconnected"
 		}
-		c.JSON(200, gin.H{"status": "healthy", "service": "procurement-service", "database": dbStatus})
+		response.Success(c, gin.H{
+			"status":   "healthy",
+			"service":  "procurement-service",
+			"database": dbStatus,
+		}, "Service is healthy")
 	})
 
 	h := handlers.NewProcurementHandler()

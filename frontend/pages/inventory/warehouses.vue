@@ -406,7 +406,7 @@ const fetchWarehouses = async () => {
     const res: any = await $fetch('/api/inventory/warehouses', {
       headers: { Authorization: `Bearer ${authStore.token}` }
     })
-    warehouses.value = res
+    warehouses.value = res.data || []
   } catch (e) { console.error(e) } 
   finally { loading.value = false }
 }

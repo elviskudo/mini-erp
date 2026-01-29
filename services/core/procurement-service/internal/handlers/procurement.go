@@ -175,7 +175,7 @@ func (h *ProcurementHandler) ListPurchaseOrders(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	if db == nil {
-		response.SuccessList(c, []gin.H{{"id": "po-1", "po_number": "PO-001", "status": "PENDING"}}, page, limit, 1, "Purchase orders retrieved")
+		response.SuccessList(c, []gin.H{{"id": "po-1", "po_number": "PO-001", "status": "OPEN", "vendor_id": "v-1", "pr_id": "pr-1", "total_amount": 1000000}}, page, limit, 1, "Purchase orders retrieved (mock)")
 		return
 	}
 
@@ -186,6 +186,21 @@ func (h *ProcurementHandler) ListPurchaseOrders(c *gin.Context) {
 		response.SuccessList(c, []models.PurchaseOrder{}, page, limit, 0, "Purchase orders retrieved")
 		return
 	}
+
+	// IF DB is empty, return mock data to unblock frontend dev
+	if total == 0 {
+		mockPO := models.PurchaseOrder{
+			ID:          "po-1",
+			PONumber:    func() *string { s := "PO-001"; return &s }(),
+			Status:      func() *string { s := "OPEN"; return &s }(),
+			TotalAmount: func() *float64 { f := 1000000.0; return &f }(),
+			VendorID:    "v-1",
+			CreatedAt:   time.Now(),
+		}
+		response.SuccessList(c, []models.PurchaseOrder{mockPO}, page, limit, 1, "Purchase orders retrieved (mock)")
+		return
+	}
+
 	response.SuccessList(c, pos, page, limit, total, "Purchase orders retrieved")
 }
 

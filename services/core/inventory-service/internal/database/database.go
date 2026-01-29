@@ -47,6 +47,9 @@ func Connect() error {
 		&models.StockMovement{},
 		&models.InventoryBatch{},
 		&models.StockOpname{},
+		&models.StorageZone{},
+		&models.OpnameSchedule{},
+		&models.OpnameAssignment{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

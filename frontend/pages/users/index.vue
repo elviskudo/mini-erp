@@ -86,6 +86,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'default' })
 
+const { $api } = useNuxtApp()
 const toast = useToast()
 
 // State
@@ -143,8 +144,8 @@ const getRoleColor = (role: string) => {
 const fetchUsers = async () => {
   loading.value = true
   try {
-    const data = await $fetch<any[]>('/api/users')
-    users.value = data
+    const res = await $api.get('/users', { baseURL: '/api' })
+    users.value = res.data || []
   } catch (e) {
     console.error('Failed to fetch users:', e)
     users.value = []
@@ -178,32 +179,26 @@ const saveUser = async () => {
   saving.value = true
   try {
     if (editingUser.value) {
-      await $fetch(`/api/users/${editingUser.value.id}`, {
-        method: 'PUT',
-        body: {
-          username: form.username,
-          email: form.email,
-          role: form.role,
-          ...(form.password && { password: form.password })
-        }
-      })
+      await $api.put(`/users/${editingUser.value.id}`, {
+        username: form.username,
+        email: form.email,
+        role: form.role,
+        ...(form.password && { password: form.password })
+      }, { baseURL: '/api' })
       toast.add({ title: 'User updated successfully' })
     } else {
-      await $fetch('/api/users', {
-        method: 'POST',
-        body: {
-          username: form.username,
-          email: form.email,
-          role: form.role,
-          password: form.password
-        }
-      })
+      await $api.post('/users', {
+        username: form.username,
+        email: form.email,
+        role: form.role,
+        password: form.password
+      }, { baseURL: '/api' })
       toast.add({ title: 'User created successfully' })
     }
     showModal.value = false
     await fetchUsers()
   } catch (e: any) {
-    toast.add({ title: 'Error', description: e.data?.detail || 'Failed to save user', color: 'red' })
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to save user', color: 'red' })
   } finally {
     saving.value = false
   }
@@ -220,12 +215,12 @@ const deleteUser = async () => {
   if (!deletingUser.value) return
   deleting.value = true
   try {
-    await $fetch(`/api/users/${deletingUser.value.id}`, { method: 'DELETE' })
+    await $api.delete(`/users/${deletingUser.value.id}`, { baseURL: '/api' })
     toast.add({ title: 'User deleted successfully' })
     showDeleteModal.value = false
     await fetchUsers()
   } catch (e: any) {
-    toast.add({ title: 'Error', description: e.data?.detail || 'Failed to delete user', color: 'red' })
+    toast.add({ title: 'Error', description: e.response?.data?.detail || 'Failed to delete user', color: 'red' })
   } finally {
     deleting.value = false
   }

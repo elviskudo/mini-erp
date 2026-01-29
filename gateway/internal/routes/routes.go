@@ -27,6 +27,9 @@ func SetupRoutes(r *gin.Engine) {
 	protected.Use(middleware.JWTAuth())
 	protected.Use(middleware.TenantExtractor())
 	setupProtectedRoutes(protected)
+
+	// Legacy /api routes (no versioning)
+	setupLegacyRoutes(r)
 }
 
 func setupPublicRoutes(rg *gin.RouterGroup) {
@@ -245,6 +248,12 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 
 		// Locations
 		inventory.GET("/locations", proxyToInventory)
+		inventory.GET("/locations-for-move", proxyToInventory)
+		inventory.GET("/storage-zones", proxyToInventory)
+		inventory.POST("/storage-zones", proxyToInventory)
+		inventory.GET("/storage-zones/:id", proxyToInventory)
+		inventory.PUT("/storage-zones/:id", proxyToInventory)
+		inventory.DELETE("/storage-zones/:id", proxyToInventory)
 	}
 
 	// ========== MANUFACTURING SERVICE (proxied to manufacturing-service:8014) ==========
@@ -735,6 +744,84 @@ func setupProtectedRoutes(rg *gin.RouterGroup) {
 	rg.Any("/clinic/*any", notImplemented)
 	rg.Any("/travel/*any", notImplemented)
 	rg.Any("/sports/*any", notImplemented)
+}
+
+// SetupLegacyRoutes configures routes under /api (without versioning) as requested
+func setupLegacyRoutes(r *gin.Engine) {
+	// Group for /api (Legacy)
+	legacy := r.Group("/api")
+	legacy.Use(middleware.JWTAuth())
+	legacy.Use(middleware.TenantExtractor())
+
+	// Group for /api/v1 (Aliasing new services to v1 for frontend convenience)
+	v1 := r.Group("/api/v1")
+	v1.Use(middleware.JWTAuth())
+	v1.Use(middleware.TenantExtractor())
+
+	// Inventory routes under /api/inventory
+	proxyToInventory := func(c *gin.Context) {
+		path := c.Request.URL.Path
+		// Transform /api/inventory... or /api/v1/inventory... to /inventory...
+		path = strings.TrimPrefix(path, "/api/v1/inventory")
+		path = strings.TrimPrefix(path, "/api/inventory")
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		if query := c.Request.URL.RawQuery; query != "" {
+			path += "?" + query
+		}
+		proxy.ProxyRequest(c, "inventory", path)
+	}
+
+	inventory := legacy.Group("/inventory")
+	{
+		inventory.GET("/locations", proxyToInventory)
+		inventory.GET("/locations-for-move", proxyToInventory)
+		inventory.GET("/storage-zones", proxyToInventory)
+	}
+
+	// Opname routes (Proxy to inventory-service /inventory/opname)
+	// Handles: /api/opname/*, /api/v1/opname/*
+	proxyToInventoryOpname := func(c *gin.Context) {
+		path := c.Request.URL.Path
+		// Normalization: Transform /api/v1/opname... or /api/opname... to /inventory/opname...
+		newPath := path
+		newPath = strings.Replace(newPath, "/api/v1/opname", "/inventory/opname", 1)
+		newPath = strings.Replace(newPath, "/api/opname", "/inventory/opname", 1)
+
+		// Pluralization Normalization: /schedules -> /schedule
+		if strings.Contains(newPath, "/opname/schedules") {
+			newPath = strings.Replace(newPath, "/opname/schedules", "/opname/schedule", 1)
+		}
+
+		if query := c.Request.URL.RawQuery; query != "" {
+			newPath += "?" + query
+		}
+		proxy.ProxyRequest(c, "inventory", newPath)
+	}
+
+	// Register in both groups
+	legacy.Any("/opname/*any", proxyToInventoryOpname)
+	v1.Any("/opname/*any", proxyToInventoryOpname)
+
+	// Users routes (Proxy to auth-service /auth/users)
+	// Handles: /api/users, /api/v1/users
+	proxyToAuthUsers := func(c *gin.Context) {
+		path := c.Request.URL.Path
+		newPath := path
+		newPath = strings.Replace(newPath, "/api/v1/users", "/auth/users", 1)
+		newPath = strings.Replace(newPath, "/api/users", "/auth/users", 1)
+
+		if query := c.Request.URL.RawQuery; query != "" {
+			newPath += "?" + query
+		}
+		proxy.ProxyRequest(c, "auth", newPath)
+	}
+
+	legacy.GET("/users", proxyToAuthUsers)
+	legacy.GET("/users/*any", proxyToAuthUsers)
+	v1.GET("/users", proxyToAuthUsers)
+	v1.GET("/users/*any", proxyToAuthUsers)
 }
 
 // ========== PROXY HELPERS ==========

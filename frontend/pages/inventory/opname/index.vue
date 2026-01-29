@@ -172,7 +172,7 @@ const viewOpname = (row: any) => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const res = await $api.get('/opname/list')
+    const res = await $api.get('/opname/list', { baseURL: '/api' })
     recentOpnames.value = (res.data || []).slice(0, 10)
     
     // Calculate stats

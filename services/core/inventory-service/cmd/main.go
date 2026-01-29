@@ -6,6 +6,7 @@ import (
 
 	"github.com/elviskudo/mini-erp/services/inventory-service/internal/database"
 	"github.com/elviskudo/mini-erp/services/inventory-service/internal/handlers"
+	"github.com/elviskudo/mini-erp/services/inventory-service/internal/response"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,12 +41,12 @@ func main() {
 		if database.GetDB() == nil {
 			dbStatus = "disconnected"
 		}
-		c.JSON(200, gin.H{
+		response.Success(c, gin.H{
 			"status":   "healthy",
 			"service":  "inventory-service",
 			"version":  "1.0.0",
 			"database": dbStatus,
-		})
+		}, "Service is healthy")
 	})
 
 	// Scalar API Documentation
@@ -90,7 +91,12 @@ func main() {
 		opname := inv.Group("/opname")
 		{
 			opname.GET("/schedule", invHandler.ListOpnameSchedules)
+			opname.GET("/schedules", invHandler.ListOpnameSchedules) // Alias for plural
 			opname.POST("/schedule", invHandler.CreateOpnameSchedule)
+			opname.POST("/schedule/:id/assign", invHandler.AddTeamMember)
+			opname.POST("/assign-team", invHandler.AssignTeam)
+			opname.GET("/print-list/:warehouse_id", invHandler.PrintOpnameList)
+			opname.GET("/list", invHandler.ListOpnames) // Dashboard list
 			opname.GET("/counting", invHandler.ListOpnameCounting)
 			opname.POST("/counting", invHandler.SubmitOpnameCount)
 			opname.GET("/matching", invHandler.ListOpnameMatching)
@@ -101,6 +107,12 @@ func main() {
 
 		// Locations
 		inv.GET("/locations", invHandler.GetLocationsHierarchy)
+		inv.GET("/locations-for-move", invHandler.GetLocationsForMove)
+		inv.GET("/storage-zones", invHandler.ListStorageZones)
+		inv.POST("/storage-zones", invHandler.CreateStorageZone)
+		inv.GET("/storage-zones/:id", invHandler.GetStorageZone)
+		inv.PUT("/storage-zones/:id", invHandler.UpdateStorageZone)
+		inv.DELETE("/storage-zones/:id", invHandler.DeleteStorageZone)
 
 		// Categories
 		inv.GET("/categories", invHandler.ListCategories)
@@ -125,6 +137,12 @@ func main() {
 		apiV1.GET("/opnames/:id", invHandler.GetOpname)
 		apiV1.POST("/opnames", invHandler.CreateOpname)
 		apiV1.GET("/locations", invHandler.GetLocationsHierarchy)
+		apiV1.GET("/locations-for-move", invHandler.GetLocationsForMove)
+		apiV1.GET("/storage-zones", invHandler.ListStorageZones)
+		apiV1.POST("/storage-zones", invHandler.CreateStorageZone)
+		apiV1.GET("/storage-zones/:id", invHandler.GetStorageZone)
+		apiV1.PUT("/storage-zones/:id", invHandler.UpdateStorageZone)
+		apiV1.DELETE("/storage-zones/:id", invHandler.DeleteStorageZone)
 		apiV1.GET("/categories", invHandler.ListCategories)
 	}
 

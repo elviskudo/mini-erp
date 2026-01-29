@@ -534,36 +534,79 @@ func (h *ManufacturingHandler) CreateBOM(c *gin.Context) {
 func (h *ManufacturingHandler) ListQCResults(c *gin.Context) {
 	page, limit, offset := getPaginationParams(c)
 	db := database.GetDB()
+	tenantID := c.GetHeader("X-Tenant-ID")
 
 	if db == nil {
-		mockData := []gin.H{{"id": "qc-1", "order_id": "po-1", "passed_qty": 95, "rejected_qty": 5}}
-		response.SuccessList(c, mockData, page, limit, 1, "QC results retrieved successfully")
+		response.InternalError(c, "Database not available")
 		return
 	}
 
 	var total int64
-	query := db.Model(&models.ProductionQCResult{})
+	query := db.Model(&models.QualityCheck{}).Where("tenant_id = ?", tenantID)
 
 	filters := make(map[string]string)
-	if orderID := c.Query("order_id"); orderID != "" {
-		query = query.Where("order_id = ?", orderID)
-		filters["order_id"] = orderID
+	if search := c.Query("search"); search != "" {
+		query = query.Where("qc_number ILIKE ? OR product_id IN (?)", "%"+search+"%", db.Model(&models.Product{}).Select("id").Where("name ILIKE ?", "%"+search+"%"))
+		filters["search"] = search
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+		filters["status"] = status
 	}
 
 	query.Count(&total)
 
-	var results []models.ProductionQCResult
-	if err := query.Offset(offset).Limit(limit).Find(&results).Error; err != nil {
+	var results []models.QualityCheck
+	if err := query.Preload("Product").Offset(offset).Limit(limit).Order("check_date DESC").Find(&results).Error; err != nil {
 		response.InternalError(c, "Failed to fetch QC results")
 		return
 	}
 
-	response.SuccessListWithSort(c, results, page, limit, total, "id", "asc", filters, "QC results retrieved successfully")
+	response.SuccessListWithSort(c, results, page, limit, total, "check_date", "desc", filters, "QC results retrieved successfully")
 }
 
 // CreateQCResult creates a QC result
 func (h *ManufacturingHandler) CreateQCResult(c *gin.Context) {
-	response.SuccessCreate(c, gin.H{"id": "new-qc-id"}, "QC result recorded successfully")
+	db := database.GetDB()
+	tenantID := c.GetHeader("X-Tenant-ID")
+
+	var req struct {
+		ProductID         string   `json:"product_id" binding:"required"`
+		ProductionOrderID *string  `json:"production_order_id"`
+		WorkOrderID       *string  `json:"work_order_id"`
+		InspectedQty      *float64 `json:"inspected_qty"`
+		Notes             *string  `json:"notes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Generate QC Number
+	var count int64
+	db.Model(&models.QualityCheck{}).Count(&count)
+	qcNumber := "QC-" + time.Now().Format("20060102") + "-" + strconv.FormatInt(count+1, 10)
+
+	qc := models.QualityCheck{
+		ID:                uuid.New().String(),
+		TenantID:          tenantID,
+		QCNumber:          qcNumber,
+		CheckDate:         time.Now(),
+		Status:            "Pending",
+		ProductID:         req.ProductID,
+		ProductionOrderID: req.ProductionOrderID,
+		WorkOrderID:       req.WorkOrderID,
+		InspectedQty:      req.InspectedQty,
+		Notes:             req.Notes,
+	}
+
+	if err := db.Create(&qc).Error; err != nil {
+		response.InternalError(c, "Failed to create QC check: "+err.Error())
+		return
+	}
+
+	response.SuccessCreate(c, qc, "QC check created successfully")
 }
 
 // ========== STATS ==========
@@ -771,92 +814,81 @@ func (h *ManufacturingHandler) DeleteBOM(c *gin.Context) {
 // GetQCResult gets QC result by ID
 func (h *ManufacturingHandler) GetQCResult(c *gin.Context) {
 	db := database.GetDB()
-	qcID := c.Param("id")
+	id := c.Param("id")
 
-	if db == nil {
-		response.NotFound(c, "QC result not found")
+	var qc models.QualityCheck
+	if err := db.Preload("Product").Where("id = ?", id).First(&qc).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.NotFound(c, "QC check not found")
+		} else {
+			response.InternalError(c, "Failed to fetch QC check")
+		}
 		return
 	}
 
-	var qc models.ProductionQCResult
-	if err := db.First(&qc, "id = ?", qcID).Error; err != nil {
-		response.NotFound(c, "QC result not found")
-		return
-	}
-
-	response.Success(c, qc, "QC result retrieved successfully")
+	response.Success(c, qc, "QC check retrieved successfully")
 }
 
-// UpdateQCResult updates a QC result
+// UpdateQCResult updates a QC result (Execute)
 func (h *ManufacturingHandler) UpdateQCResult(c *gin.Context) {
 	db := database.GetDB()
-	qcID := c.Param("id")
+	id := c.Param("id")
 
-	if db == nil {
-		response.InternalError(c, "Database not connected")
+	var qc models.QualityCheck
+	if err := db.Where("id = ?", id).First(&qc).Error; err != nil {
+		response.NotFound(c, "QC check not found")
 		return
 	}
 
-	var qc models.ProductionQCResult
-	if err := db.First(&qc, "id = ?", qcID).Error; err != nil {
-		response.NotFound(c, "QC result not found")
-		return
-	}
-
+	// Helper struct for execution updates
 	var req struct {
-		Inspector   *string  `json:"inspector"`
 		PassedQty   *float64 `json:"passed_qty"`
-		RejectedQty *float64 `json:"rejected_qty"`
+		FailedQty   *float64 `json:"failed_qty"`
+		DefectTypes *string  `json:"defect_types"`
 		Notes       *string  `json:"notes"`
+		Status      *string  `json:"status"`
 	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	if req.Inspector != nil {
-		qc.Inspector = req.Inspector
-	}
 	if req.PassedQty != nil {
 		qc.PassedQty = req.PassedQty
 	}
-	if req.RejectedQty != nil {
-		qc.RejectedQty = req.RejectedQty
+	if req.FailedQty != nil {
+		qc.FailedQty = req.FailedQty
+	}
+	if req.DefectTypes != nil {
+		qc.DefectTypes = req.DefectTypes
 	}
 	if req.Notes != nil {
 		qc.Notes = req.Notes
 	}
+	if req.Status != nil {
+		qc.Status = *req.Status
+	}
 
 	if err := db.Save(&qc).Error; err != nil {
-		response.InternalError(c, "Failed to update QC result")
+		response.InternalError(c, "Failed to update QC check")
 		return
 	}
 
-	response.Success(c, qc, "QC result updated successfully")
+	response.Success(c, qc, "QC check updated successfully")
 }
 
 // DeleteQCResult deletes a QC result
 func (h *ManufacturingHandler) DeleteQCResult(c *gin.Context) {
 	db := database.GetDB()
-	qcID := c.Param("id")
+	id := c.Param("id")
 
-	if db == nil {
-		response.InternalError(c, "Database not connected")
+	if err := db.Where("id = ?", id).Delete(&models.QualityCheck{}).Error; err != nil {
+		response.InternalError(c, "Failed to delete QC check")
 		return
 	}
 
-	var qc models.ProductionQCResult
-	if err := db.First(&qc, "id = ?", qcID).Error; err != nil {
-		response.NotFound(c, "QC result not found")
-		return
-	}
-
-	if err := db.Delete(&qc).Error; err != nil {
-		response.InternalError(c, "Failed to delete QC result")
-		return
-	}
-
-	response.Success(c, gin.H{"id": qcID}, "QC result deleted successfully")
+	response.Success(c, gin.H{"id": id}, "QC check deleted successfully")
 }
 
 // ========== WORK ORDERS ==========

@@ -88,9 +88,27 @@
       <UTable :columns="columns" :rows="filteredMovements" :loading="loading">
         <template #type-data="{ row }">
           <div class="flex items-center gap-2">
-            <UIcon :name="getTypeIcon(row.type)" :class="getTypeColor(row.type)" class="w-4 h-4" />
-            <span>{{ row.type }}</span>
+            <UIcon :name="getTypeIcon(row.movement_type)" :class="getTypeColor(row.movement_type)" class="w-4 h-4" />
+            <span class="capitalize">{{ row.movement_type?.toLowerCase() }}</span>
           </div>
+        </template>
+        <template #item-data="{ row }">
+          <div>
+            <p class="font-medium">{{ row.product?.name || '-' }}</p>
+            <p class="text-xs text-gray-500">{{ row.product?.code }}</p>
+          </div>
+        </template>
+        <template #reference-data="{ row }">
+          <div>
+            <p class="text-sm font-medium">{{ row.reference_id || '-' }}</p>
+            <p class="text-xs text-gray-400 capitalize">{{ row.reference_type?.toLowerCase() }}</p>
+          </div>
+        </template>
+        <template #warehouse-data="{ row }">
+          <span>{{ row.warehouse?.name || '-' }}</span>
+        </template>
+        <template #user-data="{ row }">
+          <span class="text-xs text-gray-500">{{ row.created_by || 'System' }}</span>
         </template>
         <template #quantity-data="{ row }">
           <span :class="row.quantity > 0 ? 'text-green-600' : 'text-red-600'" class="font-medium">
@@ -175,29 +193,32 @@ const movements = ref<any[]>([])
 const filteredMovements = computed(() => {
   if (!search.value) return movements.value
   return movements.value.filter((m: any) => {
-    return m.item?.toLowerCase().includes(search.value.toLowerCase()) ||
-      m.reference?.toLowerCase().includes(search.value.toLowerCase())
+    const term = search.value.toLowerCase()
+    return m.product?.name?.toLowerCase().includes(term) ||
+      m.product?.code?.toLowerCase().includes(term) ||
+      m.reference_id?.toLowerCase().includes(term) ||
+      m.warehouse?.name?.toLowerCase().includes(term)
   })
 })
 
 const getTypeIcon = (type: string) => {
-  switch (type) {
-    case 'Inbound': return 'i-heroicons-arrow-down-tray'
-    case 'Outbound': return 'i-heroicons-arrow-up-tray'
-    case 'Transfer': return 'i-heroicons-arrows-right-left'
-    case 'Adjustment': return 'i-heroicons-clipboard-document-check'
-    default: return 'i-heroicons-question-mark-circle'
-  }
+  if (!type) return 'i-heroicons-question-mark-circle'
+  const t = type.toUpperCase()
+  if (t === 'IN' || t === 'INBOUND') return 'i-heroicons-arrow-down-tray'
+  if (t === 'OUT' || t === 'OUTBOUND') return 'i-heroicons-arrow-up-tray'
+  if (t === 'TRANSFER') return 'i-heroicons-arrows-right-left'
+  if (t === 'ADJUSTMENT') return 'i-heroicons-clipboard-document-check'
+  return 'i-heroicons-question-mark-circle'
 }
 
 const getTypeColor = (type: string) => {
-  switch (type) {
-    case 'Inbound': return 'text-green-600'
-    case 'Outbound': return 'text-red-600'
-    case 'Transfer': return 'text-blue-600'
-    case 'Adjustment': return 'text-yellow-600'
-    default: return 'text-gray-600'
-  }
+  if (!type) return 'text-gray-600'
+  const t = type.toUpperCase()
+  if (t === 'IN' || t === 'INBOUND') return 'text-green-600'
+  if (t === 'OUT' || t === 'OUTBOUND') return 'text-red-600'
+  if (t === 'TRANSFER') return 'text-blue-600'
+  if (t === 'ADJUSTMENT') return 'text-yellow-600'
+  return 'text-gray-600'
 }
 
 const formatDate = (timestamp: string) => {
@@ -237,12 +258,18 @@ const refreshData = async () => {
     params.append('offset', String((page.value - 1) * filters.limit))
     
     const res: any = await $fetch(`/api/inventory/movements?${params.toString()}`, { headers })
-    movements.value = res.movements
-    total.value = res.total
-    stats.inbound = res.stats.inbound
-    stats.outbound = res.stats.outbound
-    stats.transfer = res.stats.transfer
-    stats.adjustment = res.stats.adjustment
+    
+    // API returns { "success": true, "data": { "movements": [], "total": 10, "stats": {...} } }
+    if (res.data) {
+      movements.value = res.data.movements || []
+      total.value = res.data.total || 0
+      if (res.data.stats) {
+        stats.inbound = res.data.stats.inbound || 0
+        stats.outbound = res.data.stats.outbound || 0
+        stats.transfer = res.data.stats.transfer || 0
+        stats.adjustment = res.data.stats.adjustment || 0
+      }
+    }
   } catch (e) {
     console.error('Failed to fetch movements', e)
   } finally {

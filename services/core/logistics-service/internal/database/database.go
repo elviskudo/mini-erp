@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/elviskudo/mini-erp/services/logistics-service/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -29,6 +30,16 @@ func Connect() error {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	log.Println("✅ Logistics Service: Database connected")
+
+	// Auto Migration
+	if err := DB.AutoMigrate(
+		&models.DeliveryOrder{},
+		&models.DeliveryOrderItem{},
+		&models.Shipment{},
+	); err != nil {
+		log.Printf("⚠️ AutoMigrate failed: %v", err)
+	}
+
 	return nil
 }
 

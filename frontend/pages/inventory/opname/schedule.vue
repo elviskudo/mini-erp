@@ -266,8 +266,16 @@
             </div>
           </div>
           
-          <UFormGroup label="Add Team Member" hint="Select user to assign" :ui="{ hint: 'text-xs text-gray-400' }">
-            <USelect v-model="assignForm.user_id" :options="users" option-attribute="username" value-attribute="id" placeholder="Select user" />
+          <UFormGroup label="Add Team Members" hint="Select users to assign (multiple allowed)" :ui="{ hint: 'text-xs text-gray-400' }">
+            <USelectMenu 
+              v-model="assignForm.user_ids" 
+              :options="users" 
+              option-attribute="username" 
+              value-attribute="id" 
+              multiple 
+              searchable 
+              placeholder="Search and select users..." 
+            />
           </UFormGroup>
           
           <UFormGroup label="Role" hint="Counter, Supervisor, or Approver" :ui="{ hint: 'text-xs text-gray-400' }">
@@ -325,7 +333,7 @@ const form = reactive({
 })
 
 const assignForm = reactive({
-  user_id: '',
+  user_ids: [] as string[],
   role: 'Counter'
 })
 
@@ -452,10 +460,11 @@ const confirmDelete = async () => {
 const printSheet = async (schedule: any) => {
   try {
     const res = await $api.get(`/opname/print-list/${schedule.warehouse_id}`)
+    const printData = res.data.data
     const printWindow = window.open('', '_blank')
     if (printWindow) {
       printWindow.document.write(`
-        <html><head><title>Count Sheet - ${res.data.warehouse_name}</title>
+        <html><head><title>Count Sheet - ${printData.warehouse_name}</title>
         <style>
           body { font-family: Arial; padding: 20px; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -465,14 +474,14 @@ const printSheet = async (schedule: any) => {
         </style>
         </head><body>
         <h1>Stock Count Sheet</h1>
-        <p><strong>Warehouse:</strong> ${res.data.warehouse_name}</p>
-        <p><strong>Date:</strong> ${res.data.date}</p>
+        <p><strong>Warehouse:</strong> ${printData.warehouse_name}</p>
+        <p><strong>Date:</strong> ${printData.date}</p>
         <table>
           <thead>
             <tr><th>Code</th><th>Product</th><th>Location</th><th>System Qty</th><th>UoM</th><th>Counted Qty</th></tr>
           </thead>
           <tbody>
-            ${res.data.items.map((i: any) => `
+            ${printData.items.map((i: any) => `
               <tr>
                 <td>${i.product_code}</td>
                 <td>${i.product_name}</td>
@@ -496,18 +505,18 @@ const printSheet = async (schedule: any) => {
 
 const assignTeam = (schedule: any) => {
   selectedSchedule.value = schedule
-  Object.assign(assignForm, { user_id: '', role: 'Counter' })
+  Object.assign(assignForm, { user_ids: [], role: 'Counter' })
   showAssignModal.value = true
 }
 
 const addTeamMember = async () => {
-  if (!assignForm.user_id) return
+  if (!assignForm.user_ids?.length) return
   
   submitting.value = true
   try {
     await $api.post('/opname/assign-team', {
       schedule_id: selectedSchedule.value.id,
-      user_id: assignForm.user_id,
+      user_ids: assignForm.user_ids,
       role: assignForm.role
     })
     toast.add({ title: 'Success', description: 'Team member added', color: 'green' })

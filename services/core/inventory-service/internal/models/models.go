@@ -90,24 +90,59 @@ func (InventoryBatch) TableName() string {
 
 // StockOpname represents stock take/opname
 type StockOpname struct {
-	ID          string     `gorm:"column:id;type:uuid;primaryKey" json:"id"`
-	TenantID    string     `gorm:"column:tenant_id;type:uuid;index;not null" json:"tenant_id"`
-	Code        string     `gorm:"column:code;not null" json:"code"`
-	Name        *string    `gorm:"column:name" json:"name"`
-	WarehouseID *string    `gorm:"column:warehouse_id;type:uuid" json:"warehouse_id"`
-	Status      string     `gorm:"column:status;not null" json:"status"` // DRAFT, IN_PROGRESS, COMPLETED
-	ScheduledAt *time.Time `gorm:"column:scheduled_at" json:"scheduled_at"`
-	StartedAt   *time.Time `gorm:"column:started_at" json:"started_at"`
-	CompletedAt *time.Time `gorm:"column:completed_at" json:"completed_at"`
-	CreatedBy   *string    `gorm:"column:created_by;type:uuid" json:"created_by"`
-	ApprovedBy  *string    `gorm:"column:approved_by;type:uuid" json:"approved_by"`
-	Notes       *string    `gorm:"column:notes" json:"notes"`
-	CreatedAt   time.Time  `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at" json:"updated_at"`
+	ID                 string              `gorm:"column:id;type:uuid;primaryKey" json:"id"`
+	TenantID           string              `gorm:"column:tenant_id;type:uuid;index;not null" json:"tenant_id"`
+	Number             string              `gorm:"column:opname_number" json:"opname_number"`
+	Code               string              `gorm:"-" json:"code,omitempty"` // Alias if needed
+	Name               *string             `gorm:"column:name" json:"name"`
+	WarehouseID        *string             `gorm:"column:warehouse_id;type:uuid" json:"warehouse_id"`
+	Warehouse          *Warehouse          `gorm:"foreignKey:WarehouseID" json:"warehouse,omitempty"`
+	Status             string              `gorm:"column:status;not null" json:"status"`
+	Date               *time.Time          `gorm:"column:date" json:"date"`
+	ScheduledAt        *time.Time          `gorm:"-" json:"scheduled_at,omitempty"` // Alias if needed
+	TotalItems         int                 `gorm:"column:total_items" json:"total_items"`
+	CountedItems       int                 `gorm:"column:counted_items" json:"counted_items"`
+	ItemsWithVariance  int                 `gorm:"column:items_with_variance" json:"items_with_variance"`
+	TotalSystemValue   float64             `gorm:"column:total_system_value" json:"total_system_value"`
+	TotalCountedValue  float64             `gorm:"column:total_counted_value" json:"total_counted_value"`
+	TotalVarianceValue float64             `gorm:"column:total_variance_value" json:"total_variance_value"`
+	StartedAt          *time.Time          `gorm:"column:counting_started_at" json:"started_at"`
+	CompletedAt        *time.Time          `gorm:"column:counting_completed_at" json:"completed_at"`
+	CreatedBy          *string             `gorm:"column:created_by;type:uuid" json:"created_by"`
+	ApprovedBy         *string             `gorm:"column:approved_by;type:uuid" json:"approved_by"`
+	Notes              *string             `gorm:"column:notes" json:"notes"`
+	Details            []StockOpnameDetail `gorm:"foreignKey:OpnameID" json:"details"`
+	CreatedAt          time.Time           `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt          time.Time           `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (StockOpname) TableName() string {
 	return "stock_opnames"
+}
+
+// StockOpnameDetail represents an item in a stock take
+type StockOpnameDetail struct {
+	ID            string     `gorm:"column:id;type:uuid;primaryKey" json:"id"`
+	TenantID      string     `gorm:"column:tenant_id;type:uuid;index;not null" json:"tenant_id"`
+	OpnameID      string     `gorm:"column:opname_id;type:uuid;index;not null" json:"opname_id"`
+	ProductID     string     `gorm:"column:product_id;type:uuid;index;not null" json:"product_id"`
+	Product       *Product   `gorm:"foreignKey:ProductID" json:"product,omitempty"`
+	BatchID       *string    `gorm:"column:batch_id;type:uuid" json:"batch_id"`
+	SystemQty     float64    `gorm:"column:system_qty" json:"system_qty"`
+	CountedQty    *float64   `gorm:"column:counted_qty" json:"counted_qty"`
+	LocationID    *string    `gorm:"column:location_id;type:uuid" json:"location_id"`
+	Variance      *float64   `gorm:"column:variance" json:"variance"`
+	UnitCost      float64    `gorm:"column:unit_cost" json:"unit_cost"`
+	SystemValue   float64    `gorm:"column:system_value" json:"system_value"`
+	CountedValue  float64    `gorm:"column:counted_value" json:"counted_value"`
+	VarianceValue float64    `gorm:"column:variance_value" json:"variance_value"`
+	CountedAt     *time.Time `gorm:"column:counted_at" json:"counted_at"`
+	CountedBy     *string    `gorm:"column:counted_by;type:uuid" json:"counted_by"`
+	NeedsRecount  bool       `gorm:"column:needs_recount" json:"needs_recount"`
+}
+
+func (StockOpnameDetail) TableName() string {
+	return "stock_opname_details"
 }
 
 // StorageZone represents a specific zone within a warehouse

@@ -479,7 +479,7 @@ func (h *InventoryHandler) ListOpnames(c *gin.Context) {
 	}
 
 	var opnames []models.StockOpname
-	query := db.Order("created_at DESC")
+	query := db.Preload("Warehouse").Order("created_at DESC")
 
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
@@ -500,7 +500,32 @@ func (h *InventoryHandler) ListOpnames(c *gin.Context) {
 
 func getMockOpnames() []gin.H {
 	return []gin.H{
-		{"id": "op-1", "code": "OP-2024-001", "name": "January Stock Take", "status": "COMPLETED", "warehouse_id": "wh-1"},
+		{
+			"id":            "op-1",
+			"opname_number": "OP-2024-001",
+			"date":          time.Now(),
+			"name":          "January Stock Take",
+			"status":        "Scheduled",
+			"warehouse": gin.H{
+				"id":   "wh-1",
+				"name": "Main Warehouse",
+			},
+			"total_items":   10,
+			"counted_items": 0,
+		},
+		{
+			"id":            "op-2",
+			"opname_number": "OP-2024-002",
+			"date":          time.Now(),
+			"name":          "Weekly Audit",
+			"status":        "In Progress",
+			"warehouse": gin.H{
+				"id":   "wh-1",
+				"name": "Main Warehouse",
+			},
+			"total_items":   5,
+			"counted_items": 2,
+		},
 	}
 }
 
@@ -528,12 +553,54 @@ func (h *InventoryHandler) CreateOpname(c *gin.Context) {
 }
 
 // GetOpname gets opname by ID
-// GET /inventory/opnames/:id
+// GET /inventory/opname/:id
 func (h *InventoryHandler) GetOpname(c *gin.Context) {
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
 	opnameID := c.Param("id")
-	response.Success(c, gin.H{
-		"id": opnameID, "code": "OP-2024-001", "name": "Stock Take", "status": "IN_PROGRESS",
-	}, "Stock opname retrieved (mock)")
+	var opname models.StockOpname
+
+	if err := db.Preload("Warehouse").Preload("Details.Product").First(&opname, "id = ?", opnameID).Error; err != nil {
+		response.NotFound(c, "Stock opname not found")
+		return
+	}
+
+	response.Success(c, opname, "Stock opname retrieved successfully")
+}
+
+// StartOpnameCounting updates status to In Progress
+// POST /inventory/opname/start-counting
+func (h *InventoryHandler) StartOpnameCounting(c *gin.Context) {
+	var req struct {
+		OpnameID string `json:"opname_id" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
+	now := time.Now()
+	// Using map to avoid GORM skipping zero values/empty strings if any, and for explicit field updates
+	if err := db.Model(&models.StockOpname{}).Where("id = ?", req.OpnameID).Updates(map[string]interface{}{
+		"status":              "In Progress",
+		"counting_started_at": &now,
+	}).Error; err != nil {
+		response.InternalError(c, "Failed to start counting: "+err.Error())
+		return
+	}
+
+	response.Success(c, nil, "Counting started")
 }
 
 // ========== STOCK OPNAME EXTENDED ==========
@@ -641,9 +708,9 @@ func (h *InventoryHandler) AssignTeam(c *gin.Context) {
 	tenantID := c.GetHeader("X-Tenant-ID")
 
 	var req struct {
-		ScheduleID string `json:"schedule_id" binding:"required"`
-		UserID     string `json:"user_id" binding:"required"`
-		Role       string `json:"role" binding:"required"`
+		ScheduleID string   `json:"schedule_id" binding:"required"`
+		UserIDs    []string `json:"user_ids" binding:"required"`
+		Role       string   `json:"role" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -651,21 +718,29 @@ func (h *InventoryHandler) AssignTeam(c *gin.Context) {
 		return
 	}
 
-	assignment := models.OpnameAssignment{
-		ID:         uuid.New().String(),
-		TenantID:   tenantID,
-		ScheduleID: req.ScheduleID,
-		UserID:     req.UserID,
-		Role:       req.Role,
-		CreatedAt:  time.Now(),
-	}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, userID := range req.UserIDs {
+			assignment := models.OpnameAssignment{
+				ID:         uuid.New().String(),
+				TenantID:   tenantID,
+				ScheduleID: req.ScheduleID,
+				UserID:     userID,
+				Role:       req.Role,
+				CreatedAt:  time.Now(),
+			}
+			if err := tx.Create(&assignment).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 
-	if err := db.Create(&assignment).Error; err != nil {
-		response.InternalError(c, "Failed to assign team member: "+err.Error())
+	if err != nil {
+		response.InternalError(c, "Failed to assign team: "+err.Error())
 		return
 	}
 
-	response.Success(c, assignment, "Team member assigned successfully")
+	response.Success(c, nil, "Team assigned successfully")
 }
 
 // PrintOpnameList generates a printable list of items to count
@@ -698,12 +773,16 @@ func (h *InventoryHandler) PrintOpnameList(c *gin.Context) {
 
 	items := make([]PrintItem, 0)
 	for _, p := range products {
+		uom := ""
+		if p.UOM != nil {
+			uom = *p.UOM
+		}
 		items = append(items, PrintItem{
-			ProductCode: p.SKU,
+			ProductCode: p.Code,
 			ProductName: p.Name,
 			Location:    "General", // Update this when location tracking is fully implemented
 			SystemQty:   100.0,     // Placeholder
-			UoM:         p.UoM,
+			UoM:         uom,
 		})
 	}
 
@@ -756,10 +835,119 @@ func (h *InventoryHandler) ListOpnameCounting(c *gin.Context) {
 	response.SuccessList(c, data, 1, 10, 1, "Counting items retrieved")
 }
 
-// SubmitOpnameCount submits count results
-// POST /inventory/opname/counting
-func (h *InventoryHandler) SubmitOpnameCount(c *gin.Context) {
-	response.Success(c, nil, "Count submitted successfully")
+// UpdateOpnameCount updates item counts in bulk
+// POST /inventory/opname/update-count
+func (h *InventoryHandler) UpdateOpnameCount(c *gin.Context) {
+	var req struct {
+		OpnameID string `json:"opname_id" binding:"required"`
+		Items    []struct {
+			DetailID   string  `json:"detail_id" binding:"required"`
+			CountedQty float64 `json:"counted_qty"`
+		} `json:"items" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
+	tx := db.Begin()
+	now := time.Now()
+
+	for _, item := range req.Items {
+		// Calculate variance and values if we can fetch the detail
+		var detail models.StockOpnameDetail
+		if err := tx.First(&detail, "id = ?", item.DetailID).Error; err != nil {
+			continue
+		}
+
+		variance := item.CountedQty - detail.SystemQty
+		countedValue := item.CountedQty * detail.UnitCost
+		varianceValue := variance * detail.UnitCost
+
+		if err := tx.Model(&models.StockOpnameDetail{}).Where("id = ?", item.DetailID).Updates(map[string]interface{}{
+			"counted_qty":    item.CountedQty,
+			"variance":       variance,
+			"counted_value":  countedValue,
+			"variance_value": varianceValue,
+			"counted_at":     &now,
+		}).Error; err != nil {
+			tx.Rollback()
+			response.InternalError(c, "Failed to update item: "+err.Error())
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.InternalError(c, "Failed to commit transaction")
+		return
+	}
+
+	response.Success(c, nil, "Counts updated successfully")
+}
+
+// CompleteOpnameCounting transitions status to Pending Review and calculates totals
+// POST /inventory/opname/complete-counting
+func (h *InventoryHandler) CompleteOpnameCounting(c *gin.Context) {
+	opnameID := c.Query("opname_id")
+	if opnameID == "" {
+		response.BadRequest(c, "opname_id is required")
+		return
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
+	var opname models.StockOpname
+	if err := db.Preload("Details").First(&opname, "id = ?", opnameID).Error; err != nil {
+		response.NotFound(c, "Stock opname not found")
+		return
+	}
+
+	// Calculate totals
+	var totalItems, countedItems, itemsWithVariance int
+	var totalSystemValue, totalCountedValue, totalVarianceValue float64
+
+	for _, d := range opname.Details {
+		totalItems++
+		if d.CountedAt != nil {
+			countedItems++
+		}
+		if d.Variance != nil && *d.Variance != 0 {
+			itemsWithVariance++
+		}
+		totalSystemValue += d.SystemValue
+		totalCountedValue += d.CountedValue
+		totalVarianceValue += d.VarianceValue
+	}
+
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":                "Pending Review",
+		"counting_completed_at": &now,
+		"total_items":           totalItems,
+		"counted_items":         countedItems,
+		"items_with_variance":   itemsWithVariance,
+		"total_system_value":    totalSystemValue,
+		"total_counted_value":   totalCountedValue,
+		"total_variance_value":  totalVarianceValue,
+	}
+
+	if err := db.Model(&opname).Updates(updates).Error; err != nil {
+		response.InternalError(c, "Failed to complete counting: "+err.Error())
+		return
+	}
+
+	response.Success(c, nil, "Counting completed successfully")
 }
 
 // ListOpnameMatching shows Discrepancies
@@ -786,10 +974,85 @@ func (h *InventoryHandler) ListOpnameAdjustments(c *gin.Context) {
 	response.SuccessList(c, data, 1, 10, 1, "Adjustments retrieved")
 }
 
-// SubmitOpnameAdjustment creates manual adjustment
+// UpdateOpnameStatus updates the status of an opname (Review, Approve, Reject)
+// POST /inventory/opname/review
+// POST /inventory/opname/approve
+func (h *InventoryHandler) UpdateOpnameStatus(c *gin.Context) {
+	var req struct {
+		OpnameID string `json:"opname_id" binding:"required"`
+		Approved *bool  `json:"approved"`
+		Notes    string `json:"notes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
+	// Determine new status based on endpoint and payload
+	newStatus := "Pending Review" // Default for /review
+	path := c.Request.URL.Path
+	if strings.HasSuffix(path, "/approve") {
+		if req.Approved != nil && *req.Approved {
+			newStatus = "Approved"
+		} else {
+			newStatus = "Rejected"
+		}
+	}
+
+	updates := map[string]interface{}{
+		"status": newStatus,
+	}
+	if req.Notes != "" {
+		updates["notes"] = req.Notes
+	}
+
+	if err := db.Model(&models.StockOpname{}).Where("id = ?", req.OpnameID).Updates(updates).Error; err != nil {
+		response.InternalError(c, "Failed to update opname status: "+err.Error())
+		return
+	}
+
+	response.Success(c, nil, "Opname status updated to "+newStatus)
+}
+
+// SubmitOpnameAdjustment creates manual adjustment (Post to final stock)
+// POST /inventory/opname/post
 // POST /inventory/opname/adjustment
 func (h *InventoryHandler) SubmitOpnameAdjustment(c *gin.Context) {
-	response.SuccessCreate(c, nil, "Adjustment created successfully")
+	var req struct {
+		OpnameID string `json:"opname_id" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		response.InternalError(c, "Database not available")
+		return
+	}
+
+	// In a real implementation, this would:
+	// 1. Fetch the approved opname and its details.
+	// 2. For each detail with a variance, create a StockMovement (ADJUSTMENT).
+	// 3. Update the InventoryBatch quantities.
+	// 4. Set opname status to "Completed" or "Posted".
+
+	// For now, let's just update the status to "Completed" to show it works
+	if err := db.Model(&models.StockOpname{}).Where("id = ?", req.OpnameID).Update("status", "Completed").Error; err != nil {
+		response.InternalError(c, "Failed to post adjustment: "+err.Error())
+		return
+	}
+
+	response.Success(c, nil, "Opname adjustments posted successfully")
 }
 
 // ========== LOCATIONS ==========

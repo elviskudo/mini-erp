@@ -341,7 +341,7 @@ const fetchPending = async () => {
   loading.value = true
   try {
     const res = await $api.get('/inventory/opnames')
-    pendingOpnames.value = (res.data || []).filter((o: any) => 
+    pendingOpnames.value = (res.data.data || []).filter((o: any) => 
       ['Counting Done', 'Reviewed', 'Approved'].includes(o.status)
     )
   } catch (e) {
@@ -354,7 +354,7 @@ const fetchPending = async () => {
 const viewDetails = async (opname: any) => {
   try {
     const res = await $api.get(`/inventory/opname/${opname.id}`)
-    selectedOpname.value = res.data
+    selectedOpname.value = res.data.data
     showDetailModal.value = true
   } catch (e) {
     toast.add({ title: 'Error', description: 'Failed to load details', color: 'red' })

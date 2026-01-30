@@ -98,7 +98,15 @@
         <p class="text-sm text-gray-500 pb-2 border-b">Create a delivery order to ship products to customers. Link to a Sales Order or create direct.</p>
         
         <UFormGroup label="Sales Order Reference" hint="Optional link to original SO" :ui="{ hint: 'text-xs text-gray-400' }">
-          <UInput v-model="form.so_id" placeholder="e.g., SO-2024-0001" />
+          <USelectMenu 
+            v-model="form.so_id" 
+            :options="soOptions" 
+            placeholder="Search Sales Order (e.g., SO-001)..." 
+            searchable
+            clearable
+            value-attribute="value"
+            @change="onSoSelect"
+          />
         </UFormGroup>
         
         <!-- Customer Section -->
@@ -110,11 +118,12 @@
           <p class="text-xs text-gray-400 mb-3">Select existing customer or enter manually. Customers are managed in <NuxtLink to="/crm/customers" class="text-blue-600 underline">CRM → Customers</NuxtLink></p>
           
           <UFormGroup label="Select Customer" hint="Choose from registered customers" :ui="{ hint: 'text-xs text-gray-400' }">
-            <USelect 
+            <USelectMenu 
               v-model="form.customer_id" 
               :options="customerOptions" 
               placeholder="Select existing customer..." 
               searchable 
+              value-attribute="value"
               @change="onCustomerSelect"
             />
           </UFormGroup>
@@ -219,11 +228,14 @@
                 <template #hint>
                   Select stock batch. Created from GRN or Production. <NuxtLink to="/inventory/stock" class="text-blue-600 underline">View Stock</NuxtLink>
                 </template>
-                <USelect 
+                <USelectMenu 
                   v-model="item.batch_id" 
                   :options="getBatchesForProduct(item.product_id)" 
                   placeholder="Select Batch (FIFO recommended)..." 
                   size="sm"
+                  searchable
+                  value-attribute="value"
+                  @change="onBatchChange(index)"
                 />
               </UFormGroup>
               <p v-if="item.product_id && getBatchesForProduct(item.product_id).length === 0" class="text-xs text-red-500 mt-1">
@@ -312,6 +324,7 @@ const showDetails = ref(false)
 const shippingId = ref<string | null>(null)
 
 const orders = ref<any[]>([])
+const salesOrders = ref<any[]>([])
 const products = ref<any[]>([])
 const stock = ref<any[]>([])
 const customers = ref<any[]>([])
@@ -354,6 +367,7 @@ const deliveredCount = computed(() => orders.value.filter(o => o.status === 'Del
 
 const productOptions = computed(() => products.value.map(p => ({ label: `${p.code || ''} - ${p.name}`, value: p.id })))
 const customerOptions = computed(() => customers.value.map(c => ({ label: `${c.name}${c.phone ? ' - ' + c.phone : ''}`, value: c.id })))
+const soOptions = computed(() => salesOrders.value.map(s => ({ label: `${s.order_number} (${s.customer_name || 'No Customer'})`, value: s.id, order_number: s.order_number, data: s })))
 
 const formatDate = (date: string) => date ? new Date(date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
 
@@ -414,19 +428,59 @@ const onCustomerSelect = () => {
   }
 }
 
+const onSoSelect = (val: string) => {
+  if (!val) return
+  
+  // val is the UUID of the selected Sales Order
+  const so = salesOrders.value.find(s => s.id === val)
+  if (!so) return
+
+  // Auto-fill customer info
+  form.customer_name = so.customer_name || ''
+  if (so.customer_id) {
+    form.customer_id = so.customer_id
+    const customer = customers.value.find(c => c.id === so.customer_id)
+    if (customer?.address) {
+      form.shipping_address = customer.address
+    }
+  }
+
+  // Auto-fill items
+  if (so.Items && so.Items.length > 0) {
+    form.items = so.Items.map((item: any) => {
+      const product = products.value.find(p => p.id === item.product_id)
+      const batches = getBatchesForProduct(item.product_id)
+      const batch = batches.length > 0 ? batches[0] : null
+      return {
+        product_id: item.product_id,
+        product_name: product?.name || '',
+        quantity: item.quantity,
+        batch_id: batch ? batch.value : '',
+        batch_number: batch ? batch.batch_number : ''
+      }
+    })
+  } else {
+    form.items = [{ product_id: '', product_name: '', quantity: 1, batch_id: '', batch_number: '' }]
+  }
+
+  toast.add({ title: 'Sales Order Linked', description: `Loaded info from ${so.order_number}`, color: 'blue' })
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
-    const [doRes, prodRes, stockRes, custRes] = await Promise.all([
+    const [doRes, prodRes, stockRes, custRes, soRes] = await Promise.all([
       $api.get('/delivery/orders').catch(() => ({ data: [] })),
       $api.get('/manufacturing/products').catch(() => ({ data: [] })),
       $api.get('/inventory/stock').catch(() => ({ data: [] })),
-      $api.get('/crm/customers').catch(() => ({ data: [] }))
+      $api.get('/crm/customers').catch(() => ({ data: [] })),
+      $api.get('/sales/orders').catch(() => ({ data: [] }))
     ])
-    orders.value = doRes.data || []
-    products.value = prodRes.data || []
-    stock.value = stockRes.data || []
-    const cData = custRes.data
+    orders.value = doRes.data?.data || []
+    products.value = prodRes.data?.data || []
+    stock.value = stockRes.data?.data || []
+    salesOrders.value = soRes.data?.data || []
+    const cData = custRes.data?.data
     customers.value = Array.isArray(cData) ? cData : (cData?.data || [])
   } catch (e) {
     console.error(e)
@@ -442,7 +496,7 @@ const openCreate = () => {
     customer_name: '',
     shipping_address: '',
     notes: '',
-    items: [{ product_id: '', quantity: 1, batch_id: '' }]
+    items: [{ product_id: '', product_name: '', quantity: 1, batch_id: '', batch_number: '' }]
   })
   addressSearch.value = ''
   addressResults.value = []
@@ -450,18 +504,31 @@ const openCreate = () => {
   isOpen.value = true
 }
 
-const addItem = () => form.items.push({ product_id: '', quantity: 1, batch_id: '' })
+const addItem = () => form.items.push({ product_id: '', product_name: '', quantity: 1, batch_id: '', batch_number: '' })
 const removeItem = (idx: number) => form.items.splice(idx, 1)
 
 const onProductChange = (idx: number) => {
+  const p = products.value.find(prod => prod.id === form.items[idx].product_id)
+  if (p) {
+    form.items[idx].product_name = p.name
+  }
   // Reset batch when product changes
   form.items[idx].batch_id = ''
+  form.items[idx].batch_number = ''
+}
+
+const onBatchChange = (idx: number) => {
+  const batches = getBatchesForProduct(form.items[idx].product_id)
+  const b = batches.find(batch => batch.value === form.items[idx].batch_id)
+  if (b) {
+    form.items[idx].batch_number = b.batch_number
+  }
 }
 
 const viewDetails = async (row: any) => {
   try {
     const res = await $api.get(`/delivery/${row.id}`)
-    selectedOrder.value = res.data
+    selectedOrder.value = res.data?.data || res.data
     showDetails.value = true
   } catch (e) {
     selectedOrder.value = row

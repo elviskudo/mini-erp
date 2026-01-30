@@ -173,14 +173,14 @@ const fetchData = async () => {
   loading.value = true
   try {
     const res = await $api.get('/opname/list', { baseURL: '/api' })
-    recentOpnames.value = (res.data || []).slice(0, 10)
+    recentOpnames.value = (res.data.data || []).slice(0, 10)
     
     // Calculate stats
     stats.value = {
-      scheduled: res.data?.filter((o: any) => o.status === 'Scheduled').length || 0,
-      inProgress: res.data?.filter((o: any) => o.status === 'In Progress').length || 0,
-      pendingReview: res.data?.filter((o: any) => ['Counting Done', 'Reviewed'].includes(o.status)).length || 0,
-      completed: res.data?.filter((o: any) => o.status === 'Posted').length || 0
+      scheduled: res.data?.data.filter((o: any) => o.status === 'Scheduled').length || 0,
+      inProgress: res.data?.data.filter((o: any) => o.status === 'In Progress').length || 0,
+      pendingReview: res.data?.data.filter((o: any) => ['Counting Done', 'Reviewed'].includes(o.status)).length || 0,
+      completed: res.data?.data.filter((o: any) => o.status === 'Posted').length || 0
     }
   } catch (e) {
     console.error(e)

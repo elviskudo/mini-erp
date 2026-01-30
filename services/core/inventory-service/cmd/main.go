@@ -97,8 +97,15 @@ func main() {
 			opname.POST("/assign-team", invHandler.AssignTeam)
 			opname.GET("/print-list/:warehouse_id", invHandler.PrintOpnameList)
 			opname.GET("/list", invHandler.ListOpnames) // Dashboard list
+			opname.GET("/:id", invHandler.GetOpname)    // Singular ID access
+			opname.POST("/start-counting", invHandler.StartOpnameCounting)
+			opname.POST("/update-count", invHandler.UpdateOpnameCount)
+			opname.POST("/complete-counting", invHandler.CompleteOpnameCounting)
+			opname.POST("/review", invHandler.UpdateOpnameStatus)
+			opname.POST("/approve", invHandler.UpdateOpnameStatus)
+			opname.POST("/post", invHandler.SubmitOpnameAdjustment)
+
 			opname.GET("/counting", invHandler.ListOpnameCounting)
-			opname.POST("/counting", invHandler.SubmitOpnameCount)
 			opname.GET("/matching", invHandler.ListOpnameMatching)
 			opname.POST("/matching", invHandler.SubmitOpnameMatch)
 			opname.GET("/adjustment", invHandler.ListOpnameAdjustments)

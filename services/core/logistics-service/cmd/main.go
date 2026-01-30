@@ -23,6 +23,11 @@ func main() {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant-ID")
+
+		if tenantID := c.GetHeader("X-Tenant-ID"); tenantID != "" {
+			c.Set("tenant_id", tenantID)
+		}
+
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -44,11 +49,14 @@ func main() {
 		logis.GET("/stats", h.GetStats)
 		logis.GET("/deliveries", h.ListDeliveries)
 		logis.POST("/deliveries", h.CreateDelivery)
-		logis.GET("/deliveries/:id", h.GetDelivery)
-		logis.PUT("/deliveries/:id/status", h.UpdateDeliveryStatus)
-		logis.GET("/shipments", h.ListShipments)
-		logis.POST("/shipments", h.CreateShipment)
+		logis.POST("/deliveries/create", h.CreateDelivery) // Alias for frontend
 		logis.GET("/track/:tracking", h.TrackShipment)
+
+		// Stock Transfers
+		logis.GET("/transfers", h.ListTransfers)
+		logis.POST("/transfers", h.CreateTransfer)
+		logis.PUT("/transfers/:id/start", h.StartTransfer)
+		logis.PUT("/transfers/:id/complete", h.CompleteTransfer)
 	}
 
 	port := os.Getenv("PORT")

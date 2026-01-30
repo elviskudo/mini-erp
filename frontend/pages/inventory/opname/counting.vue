@@ -37,6 +37,9 @@
         :search-keys="['opname_number', 'warehouse.name']"
         empty-message="No opnames available for counting"
       >
+        <template #opname_number-data="{ row }">
+          <span class="font-medium text-gray-900">{{ row.opname_number || row.id.substring(0, 8) }}</span>
+        </template>
         <template #date-data="{ row }">
           {{ formatDate(row.date) }}
         </template>
@@ -258,7 +261,7 @@ const fetchOpnames = async () => {
   loading.value = true
   try {
     const res = await $api.get('/opname/list')
-    opnames.value = (res.data || []).filter((o: any) => 
+    opnames.value = (res.data.data || []).filter((o: any) => 
       ['Scheduled', 'In Progress'].includes(o.status)
     )
   } catch (e) {
@@ -272,7 +275,7 @@ const selectOpname = async (opname: any) => {
   loading.value = true
   try {
     const res = await $api.get(`/opname/${opname.id}`)
-    selectedOpname.value = res.data
+    selectedOpname.value = res.data.data || res.data // Fallback to res.data if not wrapped
   } catch (e) {
     toast.add({ title: 'Error', description: 'Failed to load opname', color: 'red' })
   } finally {
